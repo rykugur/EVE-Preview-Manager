@@ -230,8 +230,8 @@ pub fn list_input_devices() -> Result<Vec<(String, String)>> {
         let path = entry.path();
 
         // Only include event devices (skip mouse/js devices)
-        if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-            if name.contains("-event-") {
+        if let Some(name) = path.file_name().and_then(|n| n.to_str())
+            && name.contains("-event-") {
                 // Try to open device to verify it's a keyboard
                 if let Ok(target) = std::fs::read_link(&path) {
                     let absolute_path = if target.is_absolute() {
@@ -241,9 +241,9 @@ pub fn list_input_devices() -> Result<Vec<(String, String)>> {
                     };
 
                     // Check if it's a keyboard by trying to open it
-                    if let Ok(device) = Device::open(&absolute_path) {
-                        if let Some(keys) = device.supported_keys() {
-                            if keys.contains(KeyCode(input::KEY_TAB)) {
+                    if let Ok(device) = Device::open(&absolute_path)
+                        && let Some(keys) = device.supported_keys()
+                            && keys.contains(KeyCode(input::KEY_TAB)) {
                                 // Create friendly name from device id
                                 let friendly_name = name
                                     .replace("-event-kbd", "")
@@ -253,11 +253,8 @@ pub fn list_input_devices() -> Result<Vec<(String, String)>> {
 
                                 devices.push((name.to_string(), friendly_name));
                             }
-                        }
-                    }
                 }
             }
-        }
     }
 
     // Sort by friendly name

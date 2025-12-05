@@ -117,8 +117,8 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut VisualSettingsSt
     if state.show_key_capture_dialog {
         // Check for final result first
         let mut got_result = false;
-        if let Some(ref result_rx) = state.capture_result_rx {
-            if let Ok(result) = result_rx.try_recv() {
+        if let Some(ref result_rx) = state.capture_result_rx
+            && let Ok(result) = result_rx.try_recv() {
                 // Auto-close on Escape (Cancelled)
                 if matches!(result, CaptureResult::Cancelled) {
                     state.cancel_capture();
@@ -128,7 +128,6 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut VisualSettingsSt
                     got_result = true;
                 }
             }
-        }
 
         // Update state, but if we got a result, drain all buffered states
         // to avoid showing stale "Modifier+?" states after capture completes
@@ -697,11 +696,10 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut VisualSettingsSt
                                 state.cancel_capture();
                             }
 
-                            if should_retry {
-                                if let Some(t) = target {
+                            if should_retry
+                                && let Some(t) = target {
                                     state.start_key_capture(t);
                                 }
-                            }
                         }
                         CaptureResult::Cancelled => {
                             // This case is now handled automatically above - dialog closes immediately

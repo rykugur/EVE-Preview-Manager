@@ -87,11 +87,6 @@ impl SessionState {
             info!(window = window, character = %character_name, "Tracked last known character for window");
         }
     }
-
-    /// Get last known character for a window (returns None if never had a character)
-    pub fn get_last_character(&self, window: Window) -> Option<&String> {
-        self.window_last_character.get(&window)
-    }
 }
 
 #[cfg(test)]

@@ -66,14 +66,13 @@ impl ProfileSelector {
                 let has_pending_change = self.pending_profile_idx.is_some()
                     && self.pending_profile_idx != Some(*selected_idx);
 
-                if ui.add_enabled(has_pending_change, egui::Button::new("⬇ Load")).clicked() {
-                    if let Some(new_idx) = self.pending_profile_idx {
+                if ui.add_enabled(has_pending_change, egui::Button::new("⬇ Load")).clicked()
+                    && let Some(new_idx) = self.pending_profile_idx {
                         *selected_idx = new_idx;
                         config.global.selected_profile = config.profiles[new_idx].name.clone();
                         self.pending_profile_idx = None;
                         action = ProfileAction::SwitchProfile;
                     }
-                }
             });
             
             ui.add_space(ITEM_SPACING);

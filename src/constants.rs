@@ -32,9 +32,6 @@ pub mod input {
     /// Key press event value
     pub const KEY_PRESS: i32 = 1;
 
-    /// Key repeat event value (when held down)
-    pub const KEY_REPEAT: i32 = 2;
-
     /// Key code for Tab key - used to identify keyboard devices (from Linux input-event-codes.h)
     pub const KEY_TAB: u16 = 15;
     

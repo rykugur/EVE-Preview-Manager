@@ -101,12 +101,11 @@ impl CycleState {
             }
 
             // If enabled, check for logged-out windows with this character's last identity
-            if let Some(map) = logged_out_map {
-                if let Some((&window, _)) = map.iter().find(|(_, last_char)| *last_char == character_name) {
+            if let Some(map) = logged_out_map
+                && let Some((&window, _)) = map.iter().find(|(_, last_char)| *last_char == character_name) {
                     debug!(character = %character_name, index = self.current_index, window = window, "Cycling forward to logged-out character");
                     return Some((window, character_name.as_str()));
                 }
-            }
 
             // Wrapped around without finding active or logged-out character
             if self.current_index == start_index {
@@ -150,12 +149,11 @@ impl CycleState {
             }
 
             // If enabled, check for logged-out windows with this character's last identity
-            if let Some(map) = logged_out_map {
-                if let Some((&window, _)) = map.iter().find(|(_, last_char)| *last_char == character_name) {
+            if let Some(map) = logged_out_map
+                && let Some((&window, _)) = map.iter().find(|(_, last_char)| *last_char == character_name) {
                     debug!(character = %character_name, index = self.current_index, window = window, "Cycling backward to logged-out character");
                     return Some((window, character_name.as_str()));
                 }
-            }
 
             // Wrapped around without finding active or logged-out character
             if self.current_index == start_index {

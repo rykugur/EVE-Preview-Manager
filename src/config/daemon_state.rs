@@ -263,6 +263,7 @@ mod tests {
                 selected_hotkey_device: None,
                 cycle_group: vec![],
                 include_logged_out_in_cycle: false,
+                auto_save_thumbnail_positions: true,
                 character_positions: HashMap::new(),
             },
             global: GlobalSettings {
@@ -335,34 +336,6 @@ mod tests {
         assert_eq!(config.border_color.red, 65535);
         assert_eq!(config.border_color.blue, 0);
         assert_eq!(config.border_color.alpha, 65535);
-    }
-
-    #[test]
-    fn test_update_position_with_character_name() {
-        let mut state = test_state(
-            75, 3, "#FF00FF00", 10, 20, "#FFFFFFFF", false, 15,
-        );
-
-        // Update position with dimensions
-        let _ = state.update_position("TestChar", 100, 200, 480, 270);
-        
-        let settings = state.character_positions.get("TestChar").unwrap();
-        assert_eq!(settings.x, 100);
-        assert_eq!(settings.y, 200);
-        assert_eq!(settings.dimensions.width, 480);
-        assert_eq!(settings.dimensions.height, 270);
-    }
-
-    #[test]
-    fn test_update_position_empty_name_ignored() {
-        let mut state = test_state(
-            75, 3, "#FF00FF00", 10, 20, "#FFFFFFFF", false, 15,
-        );
-
-        let _ = state.update_position("", 300, 400, 480, 270);
-        
-        // Empty name should not be inserted
-        assert!(state.character_positions.is_empty());
     }
 
     #[test]

@@ -96,7 +96,7 @@ impl Default for CaptureState {
 /// Returns a receiver that will receive updates about capture state and final result
 pub fn start_capture() -> Result<(Receiver<CaptureState>, Receiver<CaptureResult>)> {
     // Check permissions first
-    if !std::fs::read_dir(paths::DEV_INPUT).is_ok() {
+    if std::fs::read_dir(paths::DEV_INPUT).is_err() {
         return Err(anyhow::anyhow!(
             "Cannot access {}. Ensure you're in '{}' group:\n{}\nThen log out and back in.",
             paths::DEV_INPUT,
@@ -180,38 +180,22 @@ fn capture_key_blocking(state_tx: Sender<CaptureState>) -> Result<CaptureResult>
                         let is_modifier = match key_code {
                             29 | 97 => {
                                 // Left Ctrl (29) or Right Ctrl (97)
-                                if is_release {
-                                    state.ctrl = false;
-                                } else {
-                                    state.ctrl = true;
-                                }
+                                state.ctrl = !is_release;
                                 true
                             }
                             42 | 54 => {
                                 // Left Shift (42) or Right Shift (54)
-                                if is_release {
-                                    state.shift = false;
-                                } else {
-                                    state.shift = true;
-                                }
+                                state.shift = !is_release;
                                 true
                             }
                             56 | 100 => {
                                 // Left Alt (56) or Right Alt (100)
-                                if is_release {
-                                    state.alt = false;
-                                } else {
-                                    state.alt = true;
-                                }
+                                state.alt = !is_release;
                                 true
                             }
                             125 | 126 => {
                                 // Left Super (125) or Right Super (126)
-                                if is_release {
-                                    state.super_key = false;
-                                } else {
-                                    state.super_key = true;
-                                }
+                                state.super_key = !is_release;
                                 true
                             }
                             _ => false,
@@ -271,13 +255,12 @@ fn find_all_keyboard_devices() -> Result<Vec<Device>> {
 
         if let Ok(device) = Device::open(&path) {
             // Check if it has Tab key (standard keyboard indicator)
-            if let Some(keys) = device.supported_keys() {
-                if keys.contains(KeyCode(input::KEY_TAB)) {
+            if let Some(keys) = device.supported_keys()
+                && keys.contains(KeyCode(input::KEY_TAB)) {
                     let key_count = keys.iter().count();
                     info!(device_path = %path.display(), name = ?device.name(), key_count = key_count, "Found keyboard device for capture");
                     devices.push(device);
                 }
-            }
         }
     }
 
