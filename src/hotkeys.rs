@@ -1,3 +1,8 @@
+//! Global hotkey listener using evdev for raw keyboard input
+//!
+//! Monitors keyboard devices directly via /dev/input for low-latency hotkey detection.
+//! Requires 'input' group membership to access raw input devices.
+
 use anyhow::{Context, Result};
 use evdev::{Device, EventType, KeyCode};
 use std::sync::mpsc::Sender;

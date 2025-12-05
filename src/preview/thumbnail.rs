@@ -1,3 +1,8 @@
+//! Thumbnail window management
+//!
+//! Creates and manages X11 overlay windows that display scaled previews of EVE clients.
+//! Handles rendering via X11 RENDER extension, drag interactions, and border highlighting.
+
 use anyhow::{Context, Result};
 use tracing::{error, info};
 use x11rb::connection::Connection;

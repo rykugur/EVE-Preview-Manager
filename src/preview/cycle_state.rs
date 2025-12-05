@@ -1,3 +1,8 @@
+//! Hotkey cycle state management
+//!
+//! Tracks active EVE windows and their cycle order for Tab/Shift+Tab navigation.
+//! Only characters listed in the profile's cycle_group are included in cycling.
+
 use std::collections::HashMap;
 use tracing::{debug, warn};
 use x11rb::protocol::xproto::Window;

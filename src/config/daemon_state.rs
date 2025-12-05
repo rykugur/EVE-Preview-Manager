@@ -1,8 +1,7 @@
-//! Persistent state configuration for preview daemon
+//! Runtime state for the preview daemon
 //!
-//! Runtime state extracted from JSON profile config.
-//! The daemon loads the selected profile and global settings at startup,
-//! then maintains runtime character positions synchronized with the JSON file.
+//! Loads the selected profile and global settings at startup,
+//! then maintains character positions synchronized with the config file.
 
 use anyhow::{Context, Result};
 // serde derives aren't needed in this module (profile config is parsed elsewhere)
@@ -116,7 +115,7 @@ impl PersistentState {
 
         // No config file - create default and write it
         error!(path = %config_path.display(), "No config file found. Please run the GUI manager first to create a profile.");
-    error!("Run: eve-project-manager");
+        error!("Run: eve-preview-manager");
         std::process::exit(1);
     }
 
@@ -227,10 +226,6 @@ impl PersistentState {
         // Character logged out OR new character with no saved position → keep current position
         Ok(None)
     }
-
-    // helper removed: parse_num was an env-var parsing helper (hex/decimal) but is
-    // not used by the daemon runtime. If we need this behavior later, reintroduce
-    // a small helper in a shared util module.
 }
 
 #[cfg(test)]

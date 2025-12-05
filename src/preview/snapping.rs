@@ -1,3 +1,8 @@
+//! Thumbnail edge snapping
+//!
+//! Calculates snap positions when dragging thumbnails near other thumbnails.
+//! Supports edge-to-edge and alignment snapping within a configurable threshold.
+
 use crate::types::Position;
 
 #[derive(Debug, Clone, Copy)]

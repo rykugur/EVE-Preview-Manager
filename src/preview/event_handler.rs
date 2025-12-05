@@ -1,3 +1,8 @@
+//! X11 event processing for the preview daemon
+//!
+//! Handles window creation/destruction, damage notifications, focus changes,
+//! and mouse interactions (click-to-focus, drag-to-move).
+
 use anyhow::{Context, Result};
 use std::collections::HashMap;
 use x11rb::connection::Connection;

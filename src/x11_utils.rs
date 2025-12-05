@@ -1,3 +1,8 @@
+//! X11 utility functions and cached state
+//!
+//! Provides helper functions for X11 window management, atom caching,
+//! and EVE Online window detection.
+
 use anyhow::{Context, Result};
 use tracing::debug;
 use x11rb::errors::ReplyError;

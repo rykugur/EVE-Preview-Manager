@@ -1,3 +1,8 @@
+//! Session-only state for window position tracking
+//!
+//! Tracks window positions within the current X11 session. Used for preserving
+//! thumbnail positions when characters log out and for position inheritance.
+
 use std::collections::HashMap;
 use tracing::info;
 use x11rb::protocol::xproto::Window;

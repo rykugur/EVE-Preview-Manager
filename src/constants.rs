@@ -107,7 +107,7 @@ pub mod permissions {
 /// Configuration paths and filenames
 pub mod config {
     /// Application directory name under XDG config
-    pub const APP_DIR: &str = "eve-project-manager";
+    pub const APP_DIR: &str = "eve-preview-manager";
     
     /// Configuration filename
     pub const FILENAME: &str = "config.json";

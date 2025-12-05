@@ -1,7 +1,7 @@
-//! Profile-based configuration for GUI manager
+//! Profile-based configuration for the GUI manager
 //!
-//! New config architecture with support for multiple profiles,
-//! each containing a complete set of visual and behavioral settings.
+//! Supports multiple profiles, each containing visual settings (opacity, border, text),
+//! hotkey bindings, and per-character thumbnail positions.
 
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
