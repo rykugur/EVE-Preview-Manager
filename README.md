@@ -24,15 +24,20 @@ This is still under active development and should be working. But keep in mind i
 
 ## Installation
 
-### NixOS / Nix
+### NixOS
 
-```bash
-# Run directly
-nix run github:h0lylag/EVE-Preview-Manager
+Add the repo to your flake inputs:
+```nix
+{
+  inputs.eve-preview-manager.url = "github:h0lylag/EVE-Preview-Manager";
+}
+```
 
-# Or build
-nix build github:h0lylag/EVE-Preview-Manager
-./result/bin/eve-preview-manager
+Then add it to your packages:
+```nix
+environment.systemPackages = [ 
+  eve-preview-manager.packages.${pkgs.system}.default 
+];
 ```
 
 ### Other Distros (Ubuntu, Arch, Fedora, etc.)
@@ -46,6 +51,8 @@ cd eve-preview-manager-*-x86_64
 ```
 
 ### Build from Source
+
+**Build dependencies:** Rust/Cargo, pkg-config, fontconfig, dbus, X11, libxkbcommon
 
 ```bash
 git clone https://github.com/h0lylag/EVE-Preview-Manager.git
