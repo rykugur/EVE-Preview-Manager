@@ -484,13 +484,13 @@ pub fn handle_event<'a>(
                 eves.insert(event.window, thumbnail);
             } else if event.atom == ctx.atoms.net_wm_state
                 && let Some(thumbnail) = eves.get_mut(&event.window)
-                && let Some(state) = ctx.conn
+                && let Some(mut state) = ctx.conn
                     .get_property(false, event.window, event.atom, AtomEnum::ATOM, 0, 1024)
                     .context(format!("Failed to query window state for window {}", event.window))?
                     .reply()
                     .context(format!("Failed to get window state reply for window {}", event.window))?
                     .value32()
-                && state.collect::<Vec<_>>().contains(&ctx.atoms.net_wm_state_hidden)
+                && state.any(|s| s == ctx.atoms.net_wm_state_hidden)
             {
                 thumbnail.minimized()
                     .context(format!("Failed to set minimized state for '{}'", thumbnail.character_name))?;
