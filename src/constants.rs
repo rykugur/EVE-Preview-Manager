@@ -123,9 +123,14 @@ pub mod gui {
     pub const ITEM_SPACING: f32 = 8.0;
     
     /// Status colors
-    pub const STATUS_RUNNING: egui::Color32 = egui::Color32::from_rgb(0, 200, 0);
+    pub const STATUS_RUNNING: egui::Color32 = egui::Color32::from_rgb(100, 200, 100);
     pub const STATUS_STOPPED: egui::Color32 = egui::Color32::from_rgb(200, 0, 0);
     pub const STATUS_STARTING: egui::Color32 = egui::Color32::from_rgb(200, 200, 0);
+    
+    /// Alert level colors (consistent across UI)
+    pub const COLOR_SUCCESS: egui::Color32 = egui::Color32::from_rgb(100, 200, 100);  // Green - success messages
+    pub const COLOR_WARNING: egui::Color32 = egui::Color32::from_rgb(255, 200, 0);    // Yellow - warnings/unsaved
+    pub const COLOR_ERROR: egui::Color32 = egui::Color32::from_rgb(200, 100, 100);    // Red - errors/discard
     
     /// Daemon monitoring
     pub const DAEMON_CHECK_INTERVAL_MS: u64 = 500;
@@ -163,7 +168,7 @@ pub mod defaults {
         /// Default border thickness in pixels
         pub const SIZE: u16 = 3;
         
-        /// Default border color (ARGB hex string: 50% opacity red)
+        /// Default border color
         pub const COLOR: &str = "#40FF00";
     }
     
@@ -178,7 +183,7 @@ pub mod defaults {
         /// Default text Y offset from top edge in pixels
         pub const OFFSET_Y: i16 = 10;
         
-        /// Default text color (ARGB hex string: opaque white)
+        /// Default text color
         pub const COLOR: &str = "#40FF00";
         
         /// Preferred TrueType fonts (tried in order)
