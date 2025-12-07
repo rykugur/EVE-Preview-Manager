@@ -682,7 +682,7 @@ impl ManagerApp {
 
         ui.columns(3, |columns| {
             // Column 1: Behavior Settings
-            if components::behavior_settings::ui(&mut columns[0], &mut self.config.global, current_profile, &mut self.behavior_settings_state) {
+            if components::behavior_settings::ui(&mut columns[0], current_profile, &mut self.behavior_settings_state) {
                 self.settings_changed = true;
                 self.config_status_message = None;
             }

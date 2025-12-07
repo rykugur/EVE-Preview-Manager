@@ -30,7 +30,7 @@ pub struct Config {
     pub profiles: Vec<Profile>,
 }
 
-/// Global daemon behavior (applies to all profiles)
+/// Global application settings (applies to all profiles)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GlobalSettings {
     #[serde(default = "default_profile_name")]
@@ -43,24 +43,6 @@ pub struct GlobalSettings {
     pub window_x: Option<i16>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub window_y: Option<i16>,
-    #[serde(default)]
-    pub minimize_clients_on_switch: bool,
-    #[serde(default)]
-    pub hotkey_require_eve_focus: bool,
-    #[serde(default)]
-    pub hide_when_no_focus: bool,
-    #[serde(default = "default_snap_threshold")]
-    pub snap_threshold: u16,
-    /// When a new character logs in without saved coordinates, inherit the previous character's thumbnail position
-    /// This keeps thumbnails in place when swapping characters on the same EVE client
-    #[serde(default = "default_preserve_thumbnail_position_on_swap")]
-    pub preserve_thumbnail_position_on_swap: bool,
-    /// Default thumbnail width for new characters
-    #[serde(default = "default_thumbnail_width")]
-    pub default_thumbnail_width: u16,
-    /// Default thumbnail height for new characters
-    #[serde(default = "default_thumbnail_height")]
-    pub default_thumbnail_height: u16,
 }
 
 /// Profile - A complete set of visual and behavioral settings
@@ -115,6 +97,24 @@ pub struct Profile {
     /// If disabled, positions can be manually saved via system tray menu
     #[serde(default = "default_auto_save_thumbnail_positions")]
     pub auto_save_thumbnail_positions: bool,
+
+    // Behavior settings (per-profile)
+    #[serde(default)]
+    pub minimize_clients_on_switch: bool,
+    #[serde(default)]
+    pub hide_when_no_focus: bool,
+    #[serde(default = "default_snap_threshold")]
+    pub snap_threshold: u16,
+    /// When a new character logs in without saved coordinates, inherit the previous character's thumbnail position
+    /// This keeps thumbnails in place when swapping characters on the same EVE client
+    #[serde(default = "default_preserve_thumbnail_position_on_swap")]
+    pub preserve_thumbnail_position_on_swap: bool,
+    /// Default thumbnail width for new characters
+    #[serde(default = "default_thumbnail_width")]
+    pub default_thumbnail_width: u16,
+    /// Default thumbnail height for new characters
+    #[serde(default = "default_thumbnail_height")]
+    pub default_thumbnail_height: u16,
 
     // Per-profile character positions and dimensions
     #[serde(rename = "characters", default)]
@@ -193,6 +193,12 @@ fn default_profiles() -> Vec<Profile> {
         include_logged_out_in_cycle: false, // Default: off
         hotkey_require_eve_focus: crate::constants::defaults::behavior::HOTKEY_REQUIRE_EVE_FOCUS,
         auto_save_thumbnail_positions: default_auto_save_thumbnail_positions(),
+        minimize_clients_on_switch: crate::constants::defaults::behavior::MINIMIZE_CLIENTS_ON_SWITCH,
+        hide_when_no_focus: crate::constants::defaults::behavior::HIDE_WHEN_NO_FOCUS,
+        snap_threshold: default_snap_threshold(),
+        preserve_thumbnail_position_on_swap: default_preserve_thumbnail_position_on_swap(),
+        default_thumbnail_width: default_thumbnail_width(),
+        default_thumbnail_height: default_thumbnail_height(),
         character_positions: HashMap::new(),
     }]
 }
@@ -205,13 +211,6 @@ impl Default for GlobalSettings {
             window_height: default_window_height(),
             window_x: None,
             window_y: None,
-            minimize_clients_on_switch: crate::constants::defaults::behavior::MINIMIZE_CLIENTS_ON_SWITCH,
-            hotkey_require_eve_focus: crate::constants::defaults::behavior::HOTKEY_REQUIRE_EVE_FOCUS,
-            hide_when_no_focus: crate::constants::defaults::behavior::HIDE_WHEN_NO_FOCUS,
-            snap_threshold: default_snap_threshold(),
-            preserve_thumbnail_position_on_swap: default_preserve_thumbnail_position_on_swap(),
-            default_thumbnail_width: default_thumbnail_width(),
-            default_thumbnail_height: default_thumbnail_height(),
         }
     }
 }
@@ -380,13 +379,24 @@ mod tests {
         
         assert_eq!(settings.window_width, crate::constants::defaults::manager::WINDOW_WIDTH);
         assert_eq!(settings.window_height, crate::constants::defaults::manager::WINDOW_HEIGHT);
-        assert_eq!(settings.snap_threshold, crate::constants::defaults::behavior::SNAP_THRESHOLD);
+        assert!(settings.window_x.is_none());
+        assert!(settings.window_y.is_none());
+    }
+
+    #[test]
+    fn test_profile_behavior_defaults() {
+        let profile = Profile::default_with_name("Test".to_string(), String::new());
+        
+        // Test migrated behavior settings are properly defaulted
+        assert_eq!(profile.snap_threshold, crate::constants::defaults::behavior::SNAP_THRESHOLD);
         assert_eq!(
-            settings.preserve_thumbnail_position_on_swap,
+            profile.preserve_thumbnail_position_on_swap,
             crate::constants::defaults::behavior::PRESERVE_POSITION_ON_SWAP
         );
-        assert_eq!(settings.default_thumbnail_width, crate::constants::defaults::thumbnail::WIDTH);
-        assert_eq!(settings.default_thumbnail_height, crate::constants::defaults::thumbnail::HEIGHT);
+        assert_eq!(profile.default_thumbnail_width, crate::constants::defaults::thumbnail::WIDTH);
+        assert_eq!(profile.default_thumbnail_height, crate::constants::defaults::thumbnail::HEIGHT);
+        assert_eq!(profile.minimize_clients_on_switch, crate::constants::defaults::behavior::MINIMIZE_CLIENTS_ON_SWITCH);
+        assert_eq!(profile.hide_when_no_focus, crate::constants::defaults::behavior::HIDE_WHEN_NO_FOCUS);
     }
 
     #[test]

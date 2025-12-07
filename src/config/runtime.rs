@@ -27,12 +27,11 @@ pub struct DisplayConfig {
     pub hide_when_no_focus: bool,
 }
 
-/// Daemon runtime configuration - holds selected profile + global settings
+/// Daemon runtime configuration - holds selected profile settings
 /// Built from the JSON config at runtime, not serialized directly
 #[derive(Debug)]
 pub struct DaemonConfig {
     pub profile: crate::config::profile::Profile,
-    pub global: crate::config::profile::GlobalSettings,
     pub character_positions: HashMap<String, CharacterSettings>,
 }
 
@@ -44,9 +43,9 @@ impl DaemonConfig {
         path
     }
 
-    /// Get default thumbnail dimensions from global settings
+    /// Get default thumbnail dimensions from profile settings
     pub fn default_thumbnail_size(&self, _screen_width: u16, _screen_height: u16) -> (u16, u16) {
-        (self.global.default_thumbnail_width, self.global.default_thumbnail_height)
+        (self.profile.default_thumbnail_width, self.profile.default_thumbnail_height)
     }
 
     /// Build DisplayConfig from current settings
@@ -73,7 +72,7 @@ impl DaemonConfig {
             border_color,
             text_offset: TextOffset::from_border_edge(self.profile.text_x, self.profile.text_y),
             text_color,
-            hide_when_no_focus: self.global.hide_when_no_focus,
+            hide_when_no_focus: self.profile.hide_when_no_focus,
         }
     }
 
@@ -110,7 +109,6 @@ impl DaemonConfig {
 
         DaemonConfig {
             profile: profile.clone(),
-            global: config.global.clone(),
             character_positions: profile.character_positions.clone(),
         }
     }
@@ -201,7 +199,7 @@ mod tests {
         hide_when_no_focus: bool,
         snap_threshold: u16,
     ) -> DaemonConfig {
-        use crate::config::profile::{GlobalSettings, Profile};
+        use crate::config::profile::Profile;
 
         DaemonConfig {
             profile: Profile {
@@ -223,21 +221,13 @@ mod tests {
                 include_logged_out_in_cycle: false,
                 hotkey_require_eve_focus: true,
                 auto_save_thumbnail_positions: true,
-                character_positions: HashMap::new(),
-            },
-            global: GlobalSettings {
-                selected_profile: "Test Profile".to_string(),
-                window_width: 1020,
-                window_height: 745,
-                window_x: None,
-                window_y: None,
                 minimize_clients_on_switch: false,
-                hotkey_require_eve_focus: true,
                 hide_when_no_focus,
                 snap_threshold,
                 preserve_thumbnail_position_on_swap: false,
                 default_thumbnail_width: 480,
                 default_thumbnail_height: 270,
+                character_positions: HashMap::new(),
             },
             character_positions: HashMap::new(),
         }

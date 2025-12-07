@@ -298,7 +298,7 @@ fn handle_button_release(
     
     // After releasing mutable borrow, optionally minimize other EVE clients
     if is_left_click
-        && daemon_config.global.minimize_clients_on_switch
+        && daemon_config.profile.minimize_clients_on_switch
         && let Some(clicked_src) = clicked_src
     {
         for other_window in eves
@@ -333,7 +333,7 @@ fn handle_motion_notify(
         return Ok(());  // No thumbnail is being dragged
     };
     
-    let snap_threshold = daemon_config.global.snap_threshold;
+    let snap_threshold = daemon_config.profile.snap_threshold;
     
     // Get the dragging thumbnail and clone snap targets to avoid borrow conflict
     // Snap targets were computed once in ButtonPress, avoiding repeated X11 queries

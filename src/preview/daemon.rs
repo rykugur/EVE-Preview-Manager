@@ -259,7 +259,7 @@ pub fn run_preview_daemon() -> Result<()> {
         // Check for hotkey commands (non-blocking)
         if let Ok(command) = hotkey_rx.try_recv() {
             // Check if we should only allow hotkeys when EVE window is focused
-            let should_process = if daemon_config.global.hotkey_require_eve_focus {
+            let should_process = if daemon_config.profile.hotkey_require_eve_focus {
                 crate::x11::is_eve_window_focused(&conn, screen, &atoms)
                     .inspect_err(|e| error!(error = %e, "Failed to check focused window"))
                     .unwrap_or(false)
@@ -295,7 +295,7 @@ pub fn run_preview_daemon() -> Result<()> {
                     );
                     if let Err(e) = activate_window(&conn, screen, &atoms, window) {
                         error!(window = window, error = %e, "Failed to activate window");
-                    } else if daemon_config.global.minimize_clients_on_switch {
+                    } else if daemon_config.profile.minimize_clients_on_switch {
                         // Minimize all other EVE clients after successful activation
                         let other_windows: Vec<Window> = eves
                             .keys()
@@ -312,7 +312,7 @@ pub fn run_preview_daemon() -> Result<()> {
                     warn!(active_windows = cycle_state.config_order().len(), "No window to activate, cycle state is empty");
                 }
             } else {
-                info!(hotkey_require_eve_focus = daemon_config.global.hotkey_require_eve_focus, "Hotkey ignored, EVE window not focused (hotkey_require_eve_focus enabled)");
+                info!(hotkey_require_eve_focus = daemon_config.profile.hotkey_require_eve_focus, "Hotkey ignored, EVE window not focused (hotkey_require_eve_focus enabled)");
             }
         }
 

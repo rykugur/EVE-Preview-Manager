@@ -86,7 +86,7 @@ pub fn check_and_create_window<'a>(
             &character_name, 
             window, 
             &daemon_config.character_positions,
-            daemon_config.global.preserve_thumbnail_position_on_swap,
+            daemon_config.profile.preserve_thumbnail_position_on_swap,
         );
         
         // Get dimensions from CharacterSettings or use auto-detected defaults

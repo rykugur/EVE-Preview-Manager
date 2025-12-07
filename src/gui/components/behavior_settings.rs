@@ -1,7 +1,7 @@
-//! Behavior settings component (global settings that apply to all profiles)
+//! Behavior settings component (per-profile settings)
 
 use eframe::egui;
-use crate::config::profile::{GlobalSettings, Profile};
+use crate::config::profile::Profile;
 use crate::constants::gui::*;
 use crate::types::Dimensions;
 
@@ -33,7 +33,7 @@ impl Default for BehaviorSettingsState {
 }
 
 /// Renders behavior settings UI and returns true if changes were made
-pub fn ui(ui: &mut egui::Ui, global: &mut GlobalSettings, profile: &mut Profile, state: &mut BehaviorSettingsState) -> bool {
+pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettingsState) -> bool {
     let mut changed = false;
 
     // Behavior Settings (Global)
@@ -42,7 +42,7 @@ pub fn ui(ui: &mut egui::Ui, global: &mut GlobalSettings, profile: &mut Profile,
         ui.add_space(ITEM_SPACING);
 
         // Minimize clients on switch
-        if ui.checkbox(&mut global.minimize_clients_on_switch,
+        if ui.checkbox(&mut profile.minimize_clients_on_switch,
             "Minimize EVE clients when switching focus").changed() {
             changed = true;
         }
@@ -55,7 +55,7 @@ pub fn ui(ui: &mut egui::Ui, global: &mut GlobalSettings, profile: &mut Profile,
         ui.add_space(ITEM_SPACING);
 
         // Hide when no focus
-        if ui.checkbox(&mut global.hide_when_no_focus,
+        if ui.checkbox(&mut profile.hide_when_no_focus,
             "Hide thumbnails when EVE loses focus").changed() {
             changed = true;
         }
@@ -68,7 +68,7 @@ pub fn ui(ui: &mut egui::Ui, global: &mut GlobalSettings, profile: &mut Profile,
         ui.add_space(ITEM_SPACING);
 
         // Preserve thumbnail position on character swap
-        if ui.checkbox(&mut global.preserve_thumbnail_position_on_swap,
+        if ui.checkbox(&mut profile.preserve_thumbnail_position_on_swap,
             "Keep thumbnail position when switching characters").changed() {
             changed = true;
         }
@@ -83,7 +83,7 @@ pub fn ui(ui: &mut egui::Ui, global: &mut GlobalSettings, profile: &mut Profile,
         // Snap threshold
         ui.horizontal(|ui| {
             ui.label("Thumbnail Snap Distance:");
-            if ui.add(egui::Slider::new(&mut global.snap_threshold, 0..=50)
+            if ui.add(egui::Slider::new(&mut profile.snap_threshold, 0..=50)
                 .suffix(" px")).changed() {
                 changed = true;
             }
@@ -112,7 +112,7 @@ pub fn ui(ui: &mut egui::Ui, global: &mut GlobalSettings, profile: &mut Profile,
         ];
 
         // Calculate current aspect ratio and find closest matching preset
-        let current_ratio = global.default_thumbnail_width as f32 / global.default_thumbnail_height as f32;
+        let current_ratio = profile.default_thumbnail_width as f32 / profile.default_thumbnail_height as f32;
         let detected_preset = {
             let mut preset = "Custom";
             for (name, ratio) in &aspect_ratios[..aspect_ratios.len()-1] {
@@ -142,8 +142,8 @@ pub fn ui(ui: &mut egui::Ui, global: &mut GlobalSettings, profile: &mut Profile,
                             mode_changed = true;
                             if *ratio > 0.0 {
                                 // Update height based on width and selected ratio
-                                global.default_thumbnail_height =
-                                    (global.default_thumbnail_width as f32 / ratio).round() as u16;
+                                profile.default_thumbnail_height =
+                                    (profile.default_thumbnail_width as f32 / ratio).round() as u16;
                                 changed = true;
                             }
                         }
@@ -161,14 +161,14 @@ pub fn ui(ui: &mut egui::Ui, global: &mut GlobalSettings, profile: &mut Profile,
         // Width slider (primary control)
         ui.horizontal(|ui| {
             ui.label("Width:");
-            if ui.add(egui::Slider::new(&mut global.default_thumbnail_width, 100..=800)
+            if ui.add(egui::Slider::new(&mut profile.default_thumbnail_width, 100..=800)
                 .suffix(" px")).changed() {
                 // If not custom, maintain aspect ratio
                 if selected_mode != "Custom" {
                     for (name, ratio) in &aspect_ratios[..aspect_ratios.len()-1] {
                         if name == &selected_mode.as_str() {
-                            global.default_thumbnail_height =
-                                (global.default_thumbnail_width as f32 / ratio).round() as u16;
+                            profile.default_thumbnail_height =
+                                (profile.default_thumbnail_width as f32 / ratio).round() as u16;
                             break;
                         }
                     }
@@ -183,15 +183,14 @@ pub fn ui(ui: &mut egui::Ui, global: &mut GlobalSettings, profile: &mut Profile,
             ui.label("Height:");
 
             if is_custom {
-                if ui.add(egui::Slider::new(&mut global.default_thumbnail_height, 50..=600)
+                if ui.add(egui::Slider::new(&mut profile.default_thumbnail_height, 50..=600)
                     .suffix(" px")).changed() {
                     changed = true;
                 }
             } else {
                 ui.add_enabled(false,
-                    egui::Slider::new(&mut global.default_thumbnail_height, 50..=600)
+                    egui::Slider::new(&mut profile.default_thumbnail_height, 50..=600)
                         .suffix(" px"));
-                ui.weak("(locked to aspect ratio)");
             }
         });
 
@@ -199,9 +198,9 @@ pub fn ui(ui: &mut egui::Ui, global: &mut GlobalSettings, profile: &mut Profile,
         ui.horizontal(|ui| {
             ui.weak(format!(
                 "Preview: {}×{} ({:.2}:1 ratio)",
-                global.default_thumbnail_width,
-                global.default_thumbnail_height,
-                global.default_thumbnail_width as f32 / global.default_thumbnail_height as f32
+                profile.default_thumbnail_width,
+                profile.default_thumbnail_height,
+                profile.default_thumbnail_width as f32 / profile.default_thumbnail_height as f32
             ));
         });
 
