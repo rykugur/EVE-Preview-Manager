@@ -133,21 +133,6 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
         ui.label(egui::RichText::new("Hotkey Settings").strong());
         ui.add_space(ITEM_SPACING);
 
-        // Require EVE focus checkbox
-        if ui.checkbox(&mut profile.hotkey_require_eve_focus,
-            "Require EVE window focused for hotkeys to work").changed() {
-            changed = true;
-        }
-
-        ui.label(egui::RichText::new(
-            "When enabled, cycle hotkeys only work when an EVE window is focused")
-            .small()
-            .weak());
-
-        ui.add_space(ITEM_SPACING);
-        ui.separator();
-        ui.add_space(ITEM_SPACING);
-
         // Hotkey Bindings
         ui.label("Configure keys for cycling through characters:");
         ui.add_space(ITEM_SPACING / 2.0);
@@ -231,6 +216,19 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
 
         ui.add_space(ITEM_SPACING);
         ui.separator();
+        ui.add_space(ITEM_SPACING);
+
+        // Require EVE focus checkbox
+        if ui.checkbox(&mut profile.hotkey_require_eve_focus,
+            "Require EVE window focused for hotkeys to work").changed() {
+            changed = true;
+        }
+
+        ui.label(egui::RichText::new(
+            "When enabled, cycle hotkeys only work when an EVE window is focused")
+            .small()
+            .weak());
+
         ui.add_space(ITEM_SPACING);
 
         // Logged-out cycling checkbox
