@@ -145,7 +145,7 @@ pub mod defaults {
         pub const WINDOW_WIDTH: u16 = 1020;
 
         /// Default GUI window height in pixels
-        pub const WINDOW_HEIGHT: u16 = 745;
+        pub const WINDOW_HEIGHT: u16 = 770;
     }
     
     /// Thumbnail window settings
@@ -213,7 +213,7 @@ pub mod defaults {
         pub const MINIMIZE_CLIENTS_ON_SWITCH: bool = false;
         
         /// Require EVE window focus for hotkey activation
-        pub const HOTKEY_REQUIRE_EVE_FOCUS: bool = false;
+        pub const HOTKEY_REQUIRE_EVE_FOCUS: bool = true;
         
         /// Hide thumbnails when EVE window loses focus
         pub const HIDE_WHEN_NO_FOCUS: bool = false;
