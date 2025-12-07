@@ -700,6 +700,46 @@ impl eframe::App for ManagerApp {
         self.poll_daemon();
         self.poll_tray_events();
 
+        // Track window geometry changes and update config
+        // Clone viewport info to avoid lifetime issues
+        let viewport_info = ctx.input(|i| i.viewport().clone());
+
+        // Try to get window size from viewport inner_rect first, fall back to content_rect
+        let (new_width, new_height) = if let Some(inner_rect) = viewport_info.inner_rect {
+            (inner_rect.width() as u16, inner_rect.height() as u16)
+        } else {
+            // Fallback for platforms where inner_rect is None (e.g., Wayland)
+            // Use the content rect as window size
+            let content_rect = ctx.content_rect();
+            (content_rect.width() as u16, content_rect.height() as u16)
+        };
+
+        // Update config if size changed
+        if new_width > 0 && new_height > 0
+            && (new_width != self.config.global.window_width || new_height != self.config.global.window_height) {
+            info!(
+                old_width = self.config.global.window_width,
+                old_height = self.config.global.window_height,
+                new_width = new_width,
+                new_height = new_height,
+                "Window size changed"
+            );
+            self.config.global.window_width = new_width;
+            self.config.global.window_height = new_height;
+        }
+
+        // Try to get window position (may be None on Wayland/Android)
+        if let Some(outer_rect) = viewport_info.outer_rect {
+            let new_x = outer_rect.left() as i16;
+            let new_y = outer_rect.top() as i16;
+
+            // Update position if changed
+            if self.config.global.window_x != Some(new_x) || self.config.global.window_y != Some(new_y) {
+                self.config.global.window_x = Some(new_x);
+                self.config.global.window_y = Some(new_y);
+            }
+        }
+
         // Request repaint after short delay to poll for tray events even when unfocused
         // This ensures tray menu actions are processed promptly
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
@@ -740,14 +780,26 @@ impl eframe::App for ManagerApp {
         if let Err(err) = self.stop_daemon() {
             error!(error = ?err, "Failed to stop daemon during shutdown");
         }
-        
+
+        // Save window geometry to config
+        info!(
+            width = self.config.global.window_width,
+            height = self.config.global.window_height,
+            x = ?self.config.global.window_x,
+            y = ?self.config.global.window_y,
+            "Saving window geometry"
+        );
+        if let Err(err) = self.config.save_with_strategy(SaveStrategy::OverwriteCharacterPositions) {
+            error!(error = ?err, "Failed to save window geometry on exit");
+        }
+
         // Signal tray thread to shutdown
         #[cfg(target_os = "linux")]
         {
             self.shutdown_signal.notify_one();
             info!("Signaled tray thread to shutdown");
         }
-        
+
         info!("Manager exiting");
     }
 }
@@ -860,7 +912,12 @@ pub fn run_gui() -> Result<()> {
         .with_inner_size([window_width, window_height])
         .with_min_inner_size([WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT])
         .with_title("EVE Preview Manager");
-    
+
+    // Restore window position if saved
+    if let (Some(x), Some(y)) = (config.global.window_x, config.global.window_y) {
+        viewport_builder = viewport_builder.with_position([x as f32, y as f32]);
+    }
+
     if let Some(icon_data) = icon {
         viewport_builder = viewport_builder.with_icon(icon_data);
     }

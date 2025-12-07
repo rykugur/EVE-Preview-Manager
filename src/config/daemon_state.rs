@@ -268,8 +268,8 @@ mod tests {
             },
             global: GlobalSettings {
                 selected_profile: "Test Profile".to_string(),
-                window_width: 600,
-                window_height: 800,
+                window_width: 1020,
+                window_height: 745,
                 window_x: None,
                 window_y: None,
                 minimize_clients_on_switch: false,

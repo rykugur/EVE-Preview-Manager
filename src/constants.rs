@@ -137,10 +137,10 @@ pub mod defaults {
     /// GUI manager window settings
     pub mod manager {
         /// Default GUI window width in pixels
-        pub const WINDOW_WIDTH: u16 = 600;
+        pub const WINDOW_WIDTH: u16 = 1020;
 
         /// Default GUI window height in pixels
-        pub const WINDOW_HEIGHT: u16 = 800;
+        pub const WINDOW_HEIGHT: u16 = 745;
     }
     
     /// Thumbnail window settings
