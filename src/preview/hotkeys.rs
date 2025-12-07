@@ -19,7 +19,6 @@ pub enum CycleCommand {
 }
 
 /// Find all keyboard devices (devices that have a Tab key)
-/// Returns Vec of (Device, PathBuf) tuples to preserve path information
 fn find_all_keyboard_devices() -> Result<Vec<(Device, std::path::PathBuf)>> {
     info!(path = %paths::DEV_INPUT, "Scanning for keyboard devices...");
 
@@ -31,16 +30,13 @@ fn find_all_keyboard_devices() -> Result<Vec<(Device, std::path::PathBuf)>> {
         let entry = entry?;
         let path = entry.path();
 
-        // Try to open device
-        if let Ok(device) = Device::open(&path) {
-            // Check if it has Tab key (standard keyboard indicator)
-            if let Some(keys) = device.supported_keys()
+        if let Ok(device) = Device::open(&path)
+            && let Some(keys) = device.supported_keys()
                     && keys.contains(KeyCode(input::KEY_TAB)) {
                     let key_count = keys.iter().count();
                     info!(device_path = %path.display(), name = ?device.name(), key_count = key_count, "Found keyboard device");
                     devices.push((device, path));
                 }
-        }
     }
 
     if devices.is_empty() {
@@ -59,8 +55,6 @@ fn find_all_keyboard_devices() -> Result<Vec<(Device, std::path::PathBuf)>> {
 }
 
 /// Spawn background threads to listen for configured hotkeys on keyboard devices
-/// If selected_device_id is Some, only listen on that specific device (by-id name)
-/// If None, listen on all keyboard devices
 pub fn spawn_listener(
     sender: Sender<CycleCommand>,
     forward_key: HotkeyBinding,
@@ -69,11 +63,9 @@ pub fn spawn_listener(
 ) -> Result<Vec<thread::JoinHandle<()>>> {
     let mut devices = find_all_keyboard_devices()?;
 
-    // Filter devices if specific device selected
     if let Some(device_id) = selected_device_id {
         info!(device_id = %device_id, "Filtering to specific input device");
 
-        // Resolve by-id symlink to actual device path
         let by_id_path = format!("/dev/input/by-id/{}", device_id);
         let target_path = std::fs::read_link(&by_id_path)
             .with_context(|| format!("Failed to resolve device {}", by_id_path))?;
@@ -87,9 +79,7 @@ pub fn spawn_listener(
 
         info!(selected_device = %absolute_target.display(), "Resolved device path");
 
-        // Filter devices to only include the one matching the resolved path
         devices.retain(|(_, device_path)| {
-            // Canonicalize device path for proper comparison
             if let Ok(canonical_device_path) = device_path.canonicalize() {
                 canonical_device_path == absolute_target
             } else {
@@ -136,37 +126,27 @@ fn listen_for_hotkeys(
     backward_key: HotkeyBinding,
 ) -> Result<()> {
     loop {
-        // Fetch events (blocks until available)
         let events = device.fetch_events()
             .context("Failed to fetch events")?;
 
-        // Collect key press events that might match our bindings
-        // We need to finish with the events iterator before querying key state
         let mut potential_hotkey_presses = Vec::new();
 
         for event in events {
-            // Only care about key events
             if event.event_type() != EventType::KEY {
                 continue;
             }
 
-            // In evdev 0.13, use event.code() to get the raw key code
             let key_code = event.code();
             let pressed = event.value() == input::KEY_PRESS;
 
-            // Log all key events for debugging
             debug!(key_code = key_code, value = event.value(), "Key event");
 
-            // Check if this key code matches either of our bindings
             if pressed && (key_code == forward_key.key_code || key_code == backward_key.key_code) {
                 potential_hotkey_presses.push(key_code);
             }
         }
 
-        // Now process potential hotkey presses with current keyboard state
         for key_code in potential_hotkey_presses {
-            // Check real-time state of modifier keys
-            // This avoids race conditions from batched events
             let key_state = device.get_key_state()
                 .context("Failed to get keyboard state")?;
 
@@ -176,7 +156,6 @@ fn listen_for_hotkeys(
             let alt_pressed = key_state.contains(KeyCode(56)) || key_state.contains(KeyCode(100));
             let super_pressed = key_state.contains(KeyCode(125)) || key_state.contains(KeyCode(126));
 
-            // Check if this matches forward key binding
             if forward_key.matches(key_code, ctrl_pressed, shift_pressed, alt_pressed, super_pressed) {
                 info!(
                     binding = %forward_key.display_name(),
@@ -185,7 +164,6 @@ fn listen_for_hotkeys(
                 sender.send(CycleCommand::Forward)
                     .context("Failed to send cycle command")?;
             }
-            // Check if this matches backward key binding
             else if backward_key.matches(key_code, ctrl_pressed, shift_pressed, alt_pressed, super_pressed) {
                 info!(
                     binding = %backward_key.display_name(),
@@ -213,12 +191,10 @@ pub fn print_permission_error() {
 }
 
 /// List available input devices from /dev/input/by-id/
-/// Returns a list of (device_id, friendly_name) tuples
 pub fn list_input_devices() -> Result<Vec<(String, String)>> {
     let by_id_path = "/dev/input/by-id";
     let mut devices = Vec::new();
 
-    // Check if by-id directory exists
     if !std::path::Path::new(by_id_path).exists() {
         return Ok(devices);
     }
@@ -229,22 +205,18 @@ pub fn list_input_devices() -> Result<Vec<(String, String)>> {
         let entry = entry?;
         let path = entry.path();
 
-        // Only include event devices (skip mouse/js devices)
         if let Some(name) = path.file_name().and_then(|n| n.to_str())
-            && name.contains("-event-") {
-                // Try to open device to verify it's a keyboard
-                if let Ok(target) = std::fs::read_link(&path) {
+            && name.contains("-event-")
+                && let Ok(target) = std::fs::read_link(&path) {
                     let absolute_path = if target.is_absolute() {
                         target
                     } else {
                         std::path::Path::new(by_id_path).join(&target).canonicalize()?
                     };
 
-                    // Check if it's a keyboard by trying to open it
                     if let Ok(device) = Device::open(&absolute_path)
                         && let Some(keys) = device.supported_keys()
                             && keys.contains(KeyCode(input::KEY_TAB)) {
-                                // Create friendly name from device id
                                 let friendly_name = name
                                     .replace("-event-kbd", "")
                                     .replace("-event-mouse", "")
@@ -254,10 +226,8 @@ pub fn list_input_devices() -> Result<Vec<(String, String)>> {
                                 devices.push((name.to_string(), friendly_name));
                             }
                 }
-            }
     }
 
-    // Sort by friendly name
     devices.sort_by(|a, b| a.1.cmp(&b.1));
 
     Ok(devices)

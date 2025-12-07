@@ -4,9 +4,9 @@
 //! Supports multiple profiles, each with visual settings, hotkey bindings,
 //! and per-character thumbnail positions.
 
-pub mod daemon_state;
 pub mod hotkey_binding;
 pub mod profile;
+pub mod runtime;
 
-pub use daemon_state::{DisplayConfig, PersistentState};
 pub use hotkey_binding::HotkeyBinding;
+pub use runtime::{DaemonConfig, DisplayConfig};

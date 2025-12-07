@@ -4,17 +4,17 @@ use anyhow::{Context, Result};
 use tracing::{debug, error, info, warn};
 use x11rb::protocol::xproto::*;
 
-use crate::config::PersistentState;
+use crate::config::DaemonConfig;
 use crate::constants::{self, paths, wine};
 use crate::types::Dimensions;
-use crate::x11_utils::{is_window_eve, is_window_minimized, AppContext};
+use crate::x11::{is_window_eve, is_window_minimized, AppContext};
 
 use super::session_state::SessionState;
 use super::thumbnail::Thumbnail;
 
 pub fn check_and_create_window<'a>(
     ctx: &AppContext<'a>,
-    persistent_state: &PersistentState,
+    daemon_config: &DaemonConfig,
     window: Window,
     state: &mut SessionState,
 ) -> Result<Option<Thumbnail<'a>>> {
@@ -85,15 +85,15 @@ pub fn check_and_create_window<'a>(
         let position = state.get_position(
             &character_name, 
             window, 
-            &persistent_state.character_positions,
-            persistent_state.global.preserve_thumbnail_position_on_swap,
+            &daemon_config.character_positions,
+            daemon_config.global.preserve_thumbnail_position_on_swap,
         );
         
         // Get dimensions from CharacterSettings or use auto-detected defaults
-        let dimensions = if let Some(settings) = persistent_state.character_positions.get(&character_name) {
+        let dimensions = if let Some(settings) = daemon_config.character_positions.get(&character_name) {
             // If dimensions are 0 (not yet saved), auto-detect
             if settings.dimensions.width == 0 || settings.dimensions.height == 0 {
-                let (w, h) = persistent_state.default_thumbnail_size(
+                let (w, h) = daemon_config.default_thumbnail_size(
                     ctx.screen.width_in_pixels,
                     ctx.screen.height_in_pixels,
                 );
@@ -103,7 +103,7 @@ pub fn check_and_create_window<'a>(
             }
         } else {
             // Character not in settings yet - auto-detect
-            let (w, h) = persistent_state.default_thumbnail_size(
+            let (w, h) = daemon_config.default_thumbnail_size(
                 ctx.screen.width_in_pixels,
                 ctx.screen.height_in_pixels,
             );

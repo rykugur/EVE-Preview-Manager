@@ -19,7 +19,7 @@ use x11rb::wrapper::ConnectionExt as WrapperExt;
 use crate::config::DisplayConfig;
 use crate::constants::{positioning, x11};
 use crate::types::{Dimensions, Position, ThumbnailState};
-use crate::x11_utils::{to_fixed, AppContext};
+use crate::x11::{to_fixed, AppContext};
 
 use super::font::FontRenderer;
 use super::snapping::Rect;
@@ -59,7 +59,7 @@ pub struct Thumbnail<'a> {
     // === Borrowed Dependencies (private, references to app context) ===
     conn: &'a RustConnection,
     config: &'a DisplayConfig,
-    formats: &'a crate::x11_utils::CachedFormats,
+    formats: &'a crate::x11::CachedFormats,
     font_renderer: &'a FontRenderer,
 }
 

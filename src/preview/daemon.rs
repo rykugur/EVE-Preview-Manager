@@ -10,10 +10,10 @@ use x11rb::connection::Connection;
 use x11rb::protocol::damage::ConnectionExt as DamageExt;
 use x11rb::protocol::xproto::*;
 
-use crate::config::PersistentState;
+use crate::config::DaemonConfig;
 use crate::constants::eve;
-use crate::hotkeys::{self, spawn_listener, CycleCommand};
-use crate::x11_utils::{activate_window, minimize_window, AppContext, CachedAtoms};
+use super::hotkeys::{self, spawn_listener, CycleCommand};
+use crate::x11::{activate_window, minimize_window, AppContext, CachedAtoms};
 
 use super::cycle_state::CycleState;
 use super::event_handler::handle_event;
@@ -24,7 +24,7 @@ use super::window_detection::check_and_create_window;
 
 fn get_eves<'a>(
     ctx: &AppContext<'a>,
-    persistent_state: &mut PersistentState,
+    daemon_config: &mut DaemonConfig,
     state: &mut SessionState,
 ) -> Result<HashMap<Window, Thumbnail<'a>>> {
     let net_client_list = ctx.conn.intern_atom(false, b"_NET_CLIENT_LIST")
@@ -51,7 +51,7 @@ fn get_eves<'a>(
 
     let mut eves = HashMap::new();
     for w in windows {
-        if let Some(eve) = check_and_create_window(ctx, persistent_state, w, state)
+        if let Some(eve) = check_and_create_window(ctx, daemon_config, w, state)
             .context(format!("Failed to process window {} during initial scan", w))? {
             
             // Save initial position and dimensions (important for first-time characters)
@@ -68,11 +68,11 @@ fn get_eves<'a>(
                 eve.dimensions.width,
                 eve.dimensions.height,
             );
-            persistent_state.character_positions.insert(eve.character_name.clone(), settings);
+            daemon_config.character_positions.insert(eve.character_name.clone(), settings);
             
             // Conditionally persist to disk based on auto-save setting
-            if persistent_state.profile.auto_save_thumbnail_positions {
-                persistent_state.save()
+            if daemon_config.profile.auto_save_thumbnail_positions {
+                daemon_config.save()
                     .context(format!("Failed to save initial position during scan for '{}'", eve.character_name))?;
             }
             
@@ -112,35 +112,35 @@ pub fn run_preview_daemon() -> Result<()> {
     }
 
     // Load config with screen-aware defaults
-    let mut persistent_state = PersistentState::load_with_screen(
+    let mut daemon_config = DaemonConfig::load_with_screen(
         screen.width_in_pixels,
         screen.height_in_pixels,
     );
-    let config = persistent_state.build_display_config();
+    let config = daemon_config.build_display_config();
     info!(config = ?config, "Loaded display configuration");
     
     let mut session_state = SessionState::new();
     info!(
-        count = persistent_state.character_positions.len(),
+        count = daemon_config.character_positions.len(),
         "Loaded character positions from config"
     );
     
     // Initialize cycle state from config
-    let mut cycle_state = CycleState::new(persistent_state.profile.cycle_group.clone());
+    let mut cycle_state = CycleState::new(daemon_config.profile.cycle_group.clone());
     
     // Create channel for hotkey thread → main loop
     let (hotkey_tx, hotkey_rx) = mpsc::channel();
     
     // Spawn hotkey listener (optional - skip if permissions denied or not configured)
     let _hotkey_handle = if let (Some(forward_key), Some(backward_key)) =
-        (&persistent_state.profile.cycle_forward_keys, &persistent_state.profile.cycle_backward_keys)
+        (&daemon_config.profile.cycle_forward_keys, &daemon_config.profile.cycle_backward_keys)
     {
         if hotkeys::check_permissions() {
             match spawn_listener(
                 hotkey_tx,
                 forward_key.clone(),
                 backward_key.clone(),
-                persistent_state.profile.selected_hotkey_device.clone(),
+                daemon_config.profile.selected_hotkey_device.clone(),
             ) {
                 Ok(handle) => {
                     info!(
@@ -171,37 +171,37 @@ pub fn run_preview_daemon() -> Result<()> {
         .context("Failed to cache X11 atoms at startup")?;
     
     // Initialize font renderer with configured font (or fallback to system default)
-    let font_renderer = if !persistent_state.profile.text_font_family.is_empty() {
+    let font_renderer = if !daemon_config.profile.text_font_family.is_empty() {
         info!(
-            configured_font = %persistent_state.profile.text_font_family,
-            size = persistent_state.profile.text_size,
+            configured_font = %daemon_config.profile.text_font_family,
+            size = daemon_config.profile.text_size,
             "Attempting to load user-configured font"
         );
         // Try user-selected font first
         font::FontRenderer::from_font_name(
-            &persistent_state.profile.text_font_family,
-            persistent_state.profile.text_size as f32
+            &daemon_config.profile.text_font_family,
+            daemon_config.profile.text_size as f32
         )
         .or_else(|e| {
             warn!(
-                font = %persistent_state.profile.text_font_family,
+                font = %daemon_config.profile.text_font_family,
                 error = ?e,
                 "Failed to load configured font, falling back to system default"
             );
-            font::FontRenderer::from_system_font(&conn, persistent_state.profile.text_size as f32)
+            font::FontRenderer::from_system_font(&conn, daemon_config.profile.text_size as f32)
         })
     } else {
         info!(
-            size = persistent_state.profile.text_size,
+            size = daemon_config.profile.text_size,
             "No font configured, using system default"
         );
-        font::FontRenderer::from_system_font(&conn, persistent_state.profile.text_size as f32)
+        font::FontRenderer::from_system_font(&conn, daemon_config.profile.text_size as f32)
     }
-    .context(format!("Failed to initialize font renderer with size {}", persistent_state.profile.text_size))?;
+    .context(format!("Failed to initialize font renderer with size {}", daemon_config.profile.text_size))?;
     
     info!(
-        size = persistent_state.profile.text_size,
-        font = %persistent_state.profile.text_font_family,
+        size = daemon_config.profile.text_size,
+        font = %daemon_config.profile.text_font_family,
         "Font renderer initialized"
     );
     
@@ -219,7 +219,7 @@ pub fn run_preview_daemon() -> Result<()> {
     .context("Failed to set event mask on root window")?;
 
     // Pre-cache picture formats (avoids expensive queries on every thumbnail)
-    let formats = crate::x11_utils::CachedFormats::new(&conn, screen)
+    let formats = crate::x11::CachedFormats::new(&conn, screen)
         .context("Failed to cache picture formats at startup")?;
     info!("Picture formats cached");
 
@@ -232,7 +232,7 @@ pub fn run_preview_daemon() -> Result<()> {
         font_renderer: &font_renderer,
     };
 
-    let mut eves = get_eves(&ctx, &mut persistent_state, &mut session_state)
+    let mut eves = get_eves(&ctx, &mut daemon_config, &mut session_state)
         .context("Failed to get initial list of EVE windows")?;
     
     // Register initial windows with cycle state
@@ -249,7 +249,7 @@ pub fn run_preview_daemon() -> Result<()> {
             info!("Manual save requested via SIGUSR1");
             
             // Save current positions to disk
-            if let Err(e) = persistent_state.save() {
+            if let Err(e) = daemon_config.save() {
                 error!(error = ?e, "Failed to save positions after SIGUSR1");
             } else {
                 info!("Positions saved successfully");
@@ -259,8 +259,8 @@ pub fn run_preview_daemon() -> Result<()> {
         // Check for hotkey commands (non-blocking)
         if let Ok(command) = hotkey_rx.try_recv() {
             // Check if we should only allow hotkeys when EVE window is focused
-            let should_process = if persistent_state.global.hotkey_require_eve_focus {
-                crate::x11_utils::is_eve_window_focused(&conn, screen, &atoms)
+            let should_process = if daemon_config.global.hotkey_require_eve_focus {
+                crate::x11::is_eve_window_focused(&conn, screen, &atoms)
                     .inspect_err(|e| error!(error = %e, "Failed to check focused window"))
                     .unwrap_or(false)
             } else {
@@ -271,7 +271,7 @@ pub fn run_preview_daemon() -> Result<()> {
                 info!(command = ?command, "Received hotkey command");
 
                 // Build logged-out map if feature is enabled in profile
-                let logged_out_map = if persistent_state.profile.include_logged_out_in_cycle {
+                let logged_out_map = if daemon_config.profile.include_logged_out_in_cycle {
                     Some(&session_state.window_last_character)
                 } else {
                     None
@@ -295,7 +295,7 @@ pub fn run_preview_daemon() -> Result<()> {
                     );
                     if let Err(e) = activate_window(&conn, screen, &atoms, window) {
                         error!(window = window, error = %e, "Failed to activate window");
-                    } else if persistent_state.global.minimize_clients_on_switch {
+                    } else if daemon_config.global.minimize_clients_on_switch {
                         // Minimize all other EVE clients after successful activation
                         let other_windows: Vec<Window> = eves
                             .keys()
@@ -312,7 +312,7 @@ pub fn run_preview_daemon() -> Result<()> {
                     warn!(active_windows = cycle_state.config_order().len(), "No window to activate, cycle state is empty");
                 }
             } else {
-                info!(hotkey_require_eve_focus = persistent_state.global.hotkey_require_eve_focus, "Hotkey ignored, EVE window not focused (hotkey_require_eve_focus enabled)");
+                info!(hotkey_require_eve_focus = daemon_config.global.hotkey_require_eve_focus, "Hotkey ignored, EVE window not focused (hotkey_require_eve_focus enabled)");
             }
         }
 
@@ -320,7 +320,7 @@ pub fn run_preview_daemon() -> Result<()> {
             .context("Failed to wait for X11 event")?;
         let _ = handle_event(
             &ctx,
-            &mut persistent_state,
+            &mut daemon_config,
             &mut eves,
             event,
             &mut session_state,

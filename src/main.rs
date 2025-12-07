@@ -4,10 +4,9 @@ mod color;
 mod config;
 mod constants;
 mod gui;
-mod hotkeys;
 mod preview;
 mod types;
-mod x11_utils;
+mod x11;
 
 use anyhow::Result;
 use clap::Parser;

@@ -1,137 +1,18 @@
-//! X11 utility functions and cached state
-//!
-//! Provides helper functions for X11 window management, atom caching,
-//! and EVE Online window detection.
+//! X11 window state queries and operations
 
 use anyhow::{Context, Result};
 use tracing::debug;
-use x11rb::errors::ReplyError;
 use x11rb::connection::Connection;
-use x11rb::protocol::render::{ConnectionExt as RenderExt, Fixed, Pictformat};
+use x11rb::errors::ReplyError;
 use x11rb::protocol::xproto::*;
 use x11rb::rust_connection::RustConnection;
 
-use crate::config::DisplayConfig;
-use crate::constants::{eve, fixed_point, x11};
-use crate::preview::font::FontRenderer;
+use crate::constants::{eve, x11};
 use crate::types::EveWindowType;
 
-/// Application context holding immutable shared state
-pub struct AppContext<'a> {
-    pub conn: &'a RustConnection,
-    pub screen: &'a Screen,
-    pub config: &'a DisplayConfig,
-    pub atoms: &'a CachedAtoms,
-    pub formats: &'a CachedFormats,
-    pub font_renderer: &'a FontRenderer,
-}
+use super::CachedAtoms;
 
-/// Pre-cached X11 atoms to avoid repeated roundtrips
-pub struct CachedAtoms {
-    pub wm_name: Atom,
-    pub net_wm_pid: Atom,
-    pub net_wm_state: Atom,
-    pub net_wm_state_hidden: Atom,
-    pub net_wm_state_above: Atom,
-    pub net_wm_window_opacity: Atom,
-    pub wm_class: Atom,
-    pub net_active_window: Atom,
-    pub wm_change_state: Atom,
-    pub wm_state: Atom,
-}
-
-impl CachedAtoms {
-    pub fn new(conn: &RustConnection) -> Result<Self> {
-        // Do all intern_atom roundtrips once at startup
-        Ok(Self {
-            wm_name: conn.intern_atom(false, b"WM_NAME")
-                .context("Failed to intern WM_NAME atom")?
-                .reply()
-                .context("Failed to get reply for WM_NAME atom")?
-                .atom,
-            net_wm_pid: conn.intern_atom(false, b"_NET_WM_PID")
-                .context("Failed to intern _NET_WM_PID atom")?
-                .reply()
-                .context("Failed to get reply for _NET_WM_PID atom")?
-                .atom,
-            net_wm_state: conn.intern_atom(false, b"_NET_WM_STATE")
-                .context("Failed to intern _NET_WM_STATE atom")?
-                .reply()
-                .context("Failed to get reply for _NET_WM_STATE atom")?
-                .atom,
-            net_wm_state_hidden: conn.intern_atom(false, b"_NET_WM_STATE_HIDDEN")
-                .context("Failed to intern _NET_WM_STATE_HIDDEN atom")?
-                .reply()
-                .context("Failed to get reply for _NET_WM_STATE_HIDDEN atom")?
-                .atom,
-            net_wm_state_above: conn.intern_atom(false, b"_NET_WM_STATE_ABOVE")
-                .context("Failed to intern _NET_WM_STATE_ABOVE atom")?
-                .reply()
-                .context("Failed to get reply for _NET_WM_STATE_ABOVE atom")?
-                .atom,
-            net_wm_window_opacity: conn.intern_atom(false, b"_NET_WM_WINDOW_OPACITY")
-                .context("Failed to intern _NET_WM_WINDOW_OPACITY atom")?
-                .reply()
-                .context("Failed to get reply for _NET_WM_WINDOW_OPACITY atom")?
-                .atom,
-            wm_class: conn.intern_atom(false, b"WM_CLASS")
-                .context("Failed to intern WM_CLASS atom")?
-                .reply()
-                .context("Failed to get reply for WM_CLASS atom")?
-                .atom,
-            net_active_window: conn.intern_atom(false, b"_NET_ACTIVE_WINDOW")
-                .context("Failed to intern _NET_ACTIVE_WINDOW atom")?
-                .reply()
-                .context("Failed to get reply for _NET_ACTIVE_WINDOW atom")?
-                .atom,
-            wm_change_state: conn.intern_atom(false, b"WM_CHANGE_STATE")
-                .context("Failed to intern WM_CHANGE_STATE atom")?
-                .reply()
-                .context("Failed to get reply for WM_CHANGE_STATE atom")?
-                .atom,
-            wm_state: conn.intern_atom(false, b"WM_STATE")
-                .context("Failed to intern WM_STATE atom")?
-                .reply()
-                .context("Failed to get reply for WM_STATE atom")?
-                .atom,
-        })
-    }
-}
-
-/// Pre-cached picture formats to avoid repeated expensive queries
-#[derive(Debug)]
-pub struct CachedFormats {
-    pub rgb: Pictformat,
-    pub argb: Pictformat,
-}
-
-impl CachedFormats {
-    pub fn new(conn: &RustConnection, screen: &Screen) -> Result<Self> {
-        let formats_reply = conn.render_query_pict_formats()
-            .context("Failed to query RENDER picture formats")?
-            .reply()
-            .context("Failed to get RENDER formats reply")?;
-
-        let rgb = formats_reply.formats
-            .iter()
-            .find(|f| f.depth == screen.root_depth && f.direct.alpha_mask == 0)
-            .ok_or_else(|| anyhow::anyhow!("No RGB format found for depth {}", screen.root_depth))?
-            .id;
-
-        let argb = formats_reply.formats
-            .iter()
-            .find(|f| f.depth == x11::ARGB_DEPTH && f.direct.alpha_mask != 0)
-            .ok_or_else(|| anyhow::anyhow!("No ARGB format found for depth {}", x11::ARGB_DEPTH))?
-            .id;
-
-        Ok(Self { rgb, argb })
-    }
-}
-
-pub fn to_fixed(v: f32) -> Fixed {
-    (v * fixed_point::MULTIPLIER).round() as Fixed
-}
-
+/// Check if a window is an EVE Online client
 pub fn is_window_eve(conn: &RustConnection, window: Window, atoms: &CachedAtoms) -> Result<Option<EveWindowType>> {
     let cookie = conn
         .get_property(false, window, atoms.wm_name, AtomEnum::STRING, 0, 1024)
@@ -164,7 +45,6 @@ pub fn is_window_minimized(
     window: Window,
     atoms: &CachedAtoms,
 ) -> Result<bool> {
-    // Prefer modern _NET_WM_STATE_HIDDEN flag
     let net_state_cookie = conn
         .get_property(false, window, atoms.net_wm_state, AtomEnum::ATOM, 0, 1024)
         .context(format!("Failed to query _NET_WM_STATE for window {}", window))?;
@@ -222,7 +102,6 @@ pub fn is_window_minimized(
 
 /// Check if the currently focused window is an EVE client
 pub fn is_eve_window_focused(conn: &RustConnection, screen: &Screen, atoms: &CachedAtoms) -> Result<bool> {
-    // Get the currently active window
     let active_window_prop = conn
         .get_property(
             false,
@@ -235,11 +114,10 @@ pub fn is_eve_window_focused(conn: &RustConnection, screen: &Screen, atoms: &Cac
         .context("Failed to query _NET_ACTIVE_WINDOW property")?
         .reply()
         .context("Failed to get reply for _NET_ACTIVE_WINDOW query")?;
-    
+
     if active_window_prop.value.len() >= 4 {
         let active_window = u32::from_ne_bytes(active_window_prop.value[0..4].try_into()
             .context("Invalid _NET_ACTIVE_WINDOW property format")?);
-        // Check if this window is an EVE client
         Ok(is_window_eve(conn, active_window, atoms)
             .context(format!("Failed to check if active window {} is EVE client", active_window))?.is_some())
     } else {
@@ -254,16 +132,12 @@ pub fn activate_window(
     atoms: &CachedAtoms,
     window: Window,
 ) -> Result<()> {
-    use x11rb::protocol::xproto::*;
-
-    // First, raise the window to top of stack
     conn.configure_window(
         window,
         &ConfigureWindowAux::new().stack_mode(StackMode::ABOVE),
     )
     .context(format!("Failed to raise window {} to top of stack", window))?;
 
-    // Send _NET_ACTIVE_WINDOW client message to root window
     let event = ClientMessageEvent {
         response_type: CLIENT_MESSAGE_EVENT,
         format: 32,
@@ -271,9 +145,9 @@ pub fn activate_window(
         window,
         type_: atoms.net_active_window,
         data: ClientMessageData::from([
-            x11::ACTIVE_WINDOW_SOURCE_PAGER, // Source indication: 2 = pager/direct user action
-            x11rb::CURRENT_TIME, // Timestamp (current time)
-            0, // Requestor's currently active window (0 = none)
+            x11::ACTIVE_WINDOW_SOURCE_PAGER,
+            x11rb::CURRENT_TIME,
+            0,
             0,
             0,
         ]),
@@ -299,9 +173,6 @@ pub fn minimize_window(
     atoms: &CachedAtoms,
     window: Window,
 ) -> Result<()> {
-    use x11rb::protocol::xproto::*;
-
-    // Send _NET_WM_STATE client message to add _NET_WM_STATE_HIDDEN
     let event = ClientMessageEvent {
         response_type: CLIENT_MESSAGE_EVENT,
         format: 32,
@@ -309,10 +180,10 @@ pub fn minimize_window(
         window,
         type_: atoms.net_wm_state,
         data: ClientMessageData::from([
-            x11::NET_WM_STATE_ADD, // Action: 1 = add
-            atoms.net_wm_state_hidden, // First property to alter
-            0, // Second property (unused)
-            x11::ACTIVE_WINDOW_SOURCE_PAGER, // Source indication
+            x11::NET_WM_STATE_ADD,
+            atoms.net_wm_state_hidden,
+            0,
+            x11::ACTIVE_WINDOW_SOURCE_PAGER,
             0,
         ]),
     };
@@ -325,7 +196,7 @@ pub fn minimize_window(
     )
     .context(format!("Failed to send _NET_WM_STATE minimize event for window {}", window))?;
 
-    // Fallback for WMs that expect ICCCM-style iconify requests (WM_CHANGE_STATE)
+    // Fallback for WMs that expect ICCCM-style iconify requests
     let change_state_event = ClientMessageEvent {
         response_type: CLIENT_MESSAGE_EVENT,
         format: 32,

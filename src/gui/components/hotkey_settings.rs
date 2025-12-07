@@ -31,7 +31,7 @@ pub struct HotkeySettingsState {
 impl HotkeySettingsState {
     pub fn new() -> Self {
         // Load available input devices at GUI startup
-        let (available_devices, device_load_error) = match crate::hotkeys::list_input_devices() {
+        let (available_devices, device_load_error) = match crate::preview::list_input_devices() {
             Ok(devices) => (devices, None),
             Err(e) => {
                 tracing::warn!(error = ?e, "Failed to load input device list");
@@ -117,10 +117,8 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
                 if let Some(capture_state) = last_state {
                     state.current_capture_state = Some(capture_state);
                 }
-            } else {
-                if let Ok(capture_state) = state_rx.try_recv() {
-                    state.current_capture_state = Some(capture_state);
-                }
+            } else if let Ok(capture_state) = state_rx.try_recv() {
+                state.current_capture_state = Some(capture_state);
             }
         }
     }

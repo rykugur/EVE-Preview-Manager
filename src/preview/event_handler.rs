@@ -11,10 +11,10 @@ use x11rb::protocol::Event::{self, CreateNotify, DamageNotify, DestroyNotify, Pr
 use x11rb::protocol::xproto::*;
 use tracing::{debug, info, trace, warn};
 
-use crate::config::PersistentState;
+use crate::config::DaemonConfig;
 use crate::constants::mouse;
 use crate::types::{Position, ThumbnailState};
-use crate::x11_utils::{is_window_eve, minimize_window, AppContext};
+use crate::x11::{is_window_eve, minimize_window, AppContext};
 
 use super::cycle_state::CycleState;
 use super::session_state::SessionState;
@@ -40,18 +40,18 @@ fn handle_damage_notify(ctx: &AppContext, eves: &HashMap<Window, Thumbnail>, eve
 }
 
 /// Handle CreateNotify events - create thumbnail for new EVE window
-#[tracing::instrument(skip(ctx, persistent_state, eves, session_state, cycle_state, check_and_create_window))]
+#[tracing::instrument(skip(ctx, daemon_config, eves, session_state, cycle_state, check_and_create_window))]
 fn handle_create_notify<'a>(
     ctx: &AppContext<'a>,
-    persistent_state: &mut PersistentState,
+    daemon_config: &mut DaemonConfig,
     eves: &mut HashMap<Window, Thumbnail<'a>>,
     event: CreateNotifyEvent,
     session_state: &mut SessionState,
     cycle_state: &mut CycleState,
-    check_and_create_window: &impl Fn(&AppContext<'a>, &PersistentState, Window, &mut SessionState) -> Result<Option<Thumbnail<'a>>>,
+    check_and_create_window: &impl Fn(&AppContext<'a>, &DaemonConfig, Window, &mut SessionState) -> Result<Option<Thumbnail<'a>>>,
 ) -> Result<()> {
     debug!(window = event.window, "CreateNotify received");
-    if let Some(thumbnail) = check_and_create_window(ctx, persistent_state, event.window, session_state)
+    if let Some(thumbnail) = check_and_create_window(ctx, daemon_config, event.window, session_state)
         .context(format!("Failed to check/create window for new window {}", event.window))? {
         // Register with cycle state
         info!(window = event.window, character = %thumbnail.character_name, "Created thumbnail for new EVE window");
@@ -70,11 +70,11 @@ fn handle_create_notify<'a>(
             thumbnail.dimensions.width,
             thumbnail.dimensions.height,
         );
-        persistent_state.character_positions.insert(thumbnail.character_name.clone(), settings);
+        daemon_config.character_positions.insert(thumbnail.character_name.clone(), settings);
         
         // Conditionally persist to disk based on auto-save setting
-        if persistent_state.profile.auto_save_thumbnail_positions {
-            persistent_state.save()
+        if daemon_config.profile.auto_save_thumbnail_positions {
+            daemon_config.save()
                 .context(format!("Failed to save initial position for new character '{}'", thumbnail.character_name))?;
         }
         
@@ -220,10 +220,10 @@ fn handle_button_press(
 }
 
 /// Handle ButtonRelease events - focus window and save position after drag
-#[tracing::instrument(skip(ctx, persistent_state, eves, session_state))]
+#[tracing::instrument(skip(ctx, daemon_config, eves, session_state))]
 fn handle_button_release(
     ctx: &AppContext,
-    persistent_state: &mut PersistentState,
+    daemon_config: &mut DaemonConfig,
     eves: &mut HashMap<Window, Thumbnail>,
     event: ButtonReleaseEvent,
     session_state: &mut SessionState,
@@ -279,12 +279,12 @@ fn handle_button_release(
                 thumbnail.dimensions.width,
                 thumbnail.dimensions.height,
             );
-            persistent_state.character_positions.insert(thumbnail.character_name.clone(), settings);
+            daemon_config.character_positions.insert(thumbnail.character_name.clone(), settings);
             
             // Conditionally persist to disk based on auto-save setting
-            if persistent_state.profile.auto_save_thumbnail_positions {
+            if daemon_config.profile.auto_save_thumbnail_positions {
                 debug!(window = thumbnail.window, x = geom.x, y = geom.y, "Saved position after drag (auto-save enabled)");
-                persistent_state.save()
+                daemon_config.save()
                     .context(format!("Failed to save position for '{}' after drag", thumbnail.character_name))?;
             } else {
                 debug!(window = thumbnail.window, x = geom.x, y = geom.y, "Updated position in memory (auto-save disabled)");
@@ -298,7 +298,7 @@ fn handle_button_release(
     
     // After releasing mutable borrow, optionally minimize other EVE clients
     if is_left_click
-        && persistent_state.global.minimize_clients_on_switch
+        && daemon_config.global.minimize_clients_on_switch
         && let Some(clicked_src) = clicked_src
     {
         for other_window in eves
@@ -316,9 +316,9 @@ fn handle_button_release(
 }
 
 /// Handle MotionNotify events - process drag motion with snapping
-#[tracing::instrument(skip(persistent_state, eves))]
+#[tracing::instrument(skip(daemon_config, eves))]
 fn handle_motion_notify(
-    persistent_state: &PersistentState,
+    daemon_config: &DaemonConfig,
     eves: &mut HashMap<Window, Thumbnail>,
     event: MotionNotifyEvent,
 ) -> Result<()> {
@@ -333,7 +333,7 @@ fn handle_motion_notify(
         return Ok(());  // No thumbnail is being dragged
     };
     
-    let snap_threshold = persistent_state.global.snap_threshold;
+    let snap_threshold = daemon_config.global.snap_threshold;
     
     // Get the dragging thumbnail and clone snap targets to avoid borrow conflict
     // Snap targets were computed once in ButtonPress, avoiding repeated X11 queries
@@ -395,22 +395,22 @@ fn handle_drag_motion(
 
 pub fn handle_event<'a>(
     ctx: &AppContext<'a>,
-    persistent_state: &mut PersistentState,
+    daemon_config: &mut DaemonConfig,
     eves: &mut HashMap<Window, Thumbnail<'a>>,
     event: Event,
     session_state: &mut SessionState,
     cycle_state: &mut CycleState,
-    check_and_create_window: impl Fn(&AppContext<'a>, &PersistentState, Window, &mut SessionState) -> Result<Option<Thumbnail<'a>>>,
+    check_and_create_window: impl Fn(&AppContext<'a>, &DaemonConfig, Window, &mut SessionState) -> Result<Option<Thumbnail<'a>>>,
 ) -> Result<()> {
     match event {
         DamageNotify(event) => handle_damage_notify(ctx, eves, event),
-        CreateNotify(event) => handle_create_notify(ctx, persistent_state, eves, event, session_state, cycle_state, &check_and_create_window),
+        CreateNotify(event) => handle_create_notify(ctx, daemon_config, eves, event, session_state, cycle_state, &check_and_create_window),
         DestroyNotify(event) => handle_destroy_notify(eves, event, session_state, cycle_state),
         Event::FocusIn(event) => handle_focus_in(ctx, eves, event),
         Event::FocusOut(event) => handle_focus_out(ctx, eves, event),
         Event::ButtonPress(event) => handle_button_press(ctx, eves, event, cycle_state),
-        Event::ButtonRelease(event) => handle_button_release(ctx, persistent_state, eves, event, session_state),
-        Event::MotionNotify(event) => handle_motion_notify(persistent_state, eves, event),
+        Event::ButtonRelease(event) => handle_button_release(ctx, daemon_config, eves, event, session_state),
+        Event::MotionNotify(event) => handle_motion_notify(daemon_config, eves, event),
         PropertyNotify(event) => {
             if event.atom == ctx.atoms.wm_name
                 && let Some(thumbnail) = eves.get_mut(&event.window)
@@ -436,7 +436,7 @@ pub fn handle_event<'a>(
 
                 // Handle character swap: updates position mapping in config and saves to disk
                 // Returns either preserved position (if configured) or current position
-                let new_position = persistent_state.handle_character_change(
+                let new_position = daemon_config.handle_character_change(
                     &old_name,
                     new_character_name,
                     current_pos,
@@ -453,7 +453,7 @@ pub fn handle_event<'a>(
                     .context(format!("Failed to update thumbnail after character change from '{}'", old_name))?;
                 
             } else if event.atom == ctx.atoms.wm_name
-                && let Some(thumbnail) = check_and_create_window(ctx, persistent_state, event.window, session_state)
+                && let Some(thumbnail) = check_and_create_window(ctx, daemon_config, event.window, session_state)
                     .context(format!("Failed to create thumbnail for newly detected EVE window {}", event.window))?
             {
                 // New EVE window detected
@@ -472,11 +472,11 @@ pub fn handle_event<'a>(
                     thumbnail.dimensions.width,
                     thumbnail.dimensions.height,
                 );
-                persistent_state.character_positions.insert(thumbnail.character_name.clone(), settings);
+                daemon_config.character_positions.insert(thumbnail.character_name.clone(), settings);
                 
                 // Conditionally persist to disk based on auto-save setting
-                if persistent_state.profile.auto_save_thumbnail_positions {
-                    persistent_state.save()
+                if daemon_config.profile.auto_save_thumbnail_positions {
+                    daemon_config.save()
                         .context(format!("Failed to save initial position for newly detected character '{}'", thumbnail.character_name))?;
                 }
                 

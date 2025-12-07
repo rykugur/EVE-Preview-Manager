@@ -118,32 +118,30 @@ impl ProfileSelector {
         });
     }
 
-    /// Full UI render with both dropdown and buttons
-    pub fn ui(
+    /// Render just the modal dialogs (called separately from context level)
+    pub fn render_dialogs(
         &mut self,
-        ui: &mut egui::Ui,
+        ctx: &egui::Context,
         config: &mut Config,
         selected_idx: &mut usize,
     ) -> ProfileAction {
-        let mut action = self.render_dropdown(ui, config, selected_idx);
-        ui.add_space(ITEM_SPACING);
-        self.render_buttons(ui, config, *selected_idx);
+        let mut action = ProfileAction::None;
         
         // Modal dialogs
         if self.show_new_dialog {
-            action = self.new_profile_dialog(ui.ctx(), config);
+            action = self.new_profile_dialog(ctx, config);
         }
         
         if self.show_duplicate_dialog {
-            action = self.duplicate_profile_dialog(ui.ctx(), config, *selected_idx);
+            action = self.duplicate_profile_dialog(ctx, config, *selected_idx);
         }
         
         if self.show_edit_dialog {
-            action = self.edit_profile_dialog(ui.ctx(), config, *selected_idx);
+            action = self.edit_profile_dialog(ctx, config, *selected_idx);
         }
 
         if self.show_delete_confirm {
-            action = self.delete_confirm_dialog(ui.ctx(), config, selected_idx);
+            action = self.delete_confirm_dialog(ctx, config, selected_idx);
         }
 
         // Clear pending selection after profile modifications

@@ -1,4 +1,5 @@
 .github/
+CLAUDE.md
 target/
 dist/
 result

@@ -574,7 +574,7 @@ impl ManagerApp {
 
     fn render_unified_settings(&mut self, ui: &mut egui::Ui) {
         // Row 1: Profile dropdown group + Save/Discard buttons
-        let action = ui.horizontal(|ui| {
+        let mut action = ui.horizontal(|ui| {
             // Profile dropdown group
             let action = self.profile_selector.render_dropdown(
                 ui,
@@ -628,6 +628,18 @@ impl ManagerApp {
                 }
             });
         });
+
+        // Render modal dialogs (must be called at context level, not inside layout)
+        let dialog_action = self.profile_selector.render_dialogs(
+            ui.ctx(),
+            &mut self.config,
+            &mut self.selected_profile_idx
+        );
+
+        // Merge dialog action with dropdown action
+        if !matches!(dialog_action, ProfileAction::None) {
+            action = dialog_action;
+        }
 
         match action {
             ProfileAction::SwitchProfile => {
