@@ -20,6 +20,7 @@ pub struct AppContext<'a> {
 }
 
 /// Pre-cached X11 atoms to avoid repeated roundtrips
+#[derive(Debug)]
 pub struct CachedAtoms {
     pub wm_name: Atom,
     pub net_wm_pid: Atom,

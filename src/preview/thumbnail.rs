@@ -61,6 +61,7 @@ pub struct Thumbnail<'a> {
     config: &'a DisplayConfig,
     formats: &'a crate::x11::CachedFormats,
     font_renderer: &'a FontRenderer,
+    atoms: &'a crate::x11::CachedAtoms,
 }
 
 impl<'a> Thumbnail<'a> {
@@ -335,6 +336,7 @@ impl<'a> Thumbnail<'a> {
             config: ctx.config,
             formats: ctx.formats,
             font_renderer,
+            atoms: ctx.atoms,
         };
         
         // Render initial name overlay
@@ -628,20 +630,12 @@ impl<'a> Thumbnail<'a> {
     }
 
     pub fn focus(&self) -> Result<()> {
-        let net_active = self
-            .conn
-            .intern_atom(false, b"_NET_ACTIVE_WINDOW")
-            .context("Failed to intern _NET_ACTIVE_WINDOW atom")?
-            .reply()
-            .context("Failed to get reply for _NET_ACTIVE_WINDOW atom")?
-            .atom;
-
         let ev = ClientMessageEvent {
             response_type: CLIENT_MESSAGE_EVENT,
             format: 32,
             sequence: 0,
             window: self.src,
-            type_: net_active,
+            type_: self.atoms.net_active_window,
             data: [2, 0, 0, 0, 0].into(),
         };
 
