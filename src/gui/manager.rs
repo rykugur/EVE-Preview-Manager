@@ -781,15 +781,9 @@ impl eframe::App for ManagerApp {
             error!(error = ?err, "Failed to stop daemon during shutdown");
         }
 
-        // Save window geometry to config
-        info!(
-            width = self.config.global.window_width,
-            height = self.config.global.window_height,
-            "Saving window geometry"
-        );
-        if let Err(err) = self.config.save_with_strategy(SaveStrategy::PreserveCharacterPositions) {
-            error!(error = ?err, "Failed to save window geometry on exit");
-        }
+        // Note: Window geometry is saved when changed via save_config()
+        // Thumbnail positions are saved by the daemon when dragged (auto-save)
+        // No need to save on exit - prevents race conditions with daemon writes
 
         // Signal tray thread to shutdown
         #[cfg(target_os = "linux")]
