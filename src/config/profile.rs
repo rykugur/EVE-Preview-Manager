@@ -107,6 +107,10 @@ pub struct Profile {
     #[serde(default)]
     pub include_logged_out_in_cycle: bool,
 
+    /// Require EVE window focused for hotkeys to work
+    #[serde(default)]
+    pub hotkey_require_eve_focus: bool,
+
     /// Automatically save thumbnail positions when dragged
     /// If disabled, positions can be manually saved via system tray menu
     #[serde(default = "default_auto_save_thumbnail_positions")]
@@ -187,6 +191,7 @@ fn default_profiles() -> Vec<Profile> {
         selected_hotkey_device: None, // Default: monitor all devices
         cycle_group: Vec::new(),
         include_logged_out_in_cycle: false, // Default: off
+        hotkey_require_eve_focus: crate::constants::defaults::behavior::HOTKEY_REQUIRE_EVE_FOCUS,
         auto_save_thumbnail_positions: default_auto_save_thumbnail_positions(),
         character_positions: HashMap::new(),
     }]

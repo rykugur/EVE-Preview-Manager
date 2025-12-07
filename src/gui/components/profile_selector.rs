@@ -30,7 +30,8 @@ impl ProfileSelector {
         self.pending_profile_idx = None;
     }
 
-    pub fn ui(
+    /// Render just the dropdown group box with Load button
+    pub fn render_dropdown(
         &mut self,
         ui: &mut egui::Ui,
         config: &mut Config,
@@ -74,40 +75,59 @@ impl ProfileSelector {
                         action = ProfileAction::SwitchProfile;
                     }
             });
-            
-            ui.add_space(ITEM_SPACING);
-            
-            // Action buttons
-            ui.horizontal(|ui| {
-                if ui.button("➕ New").clicked() {
-                    self.show_new_dialog = true;
-                    self.edit_profile_name.clear();
-                    self.edit_profile_desc.clear();
-                }
-                
-                if ui.button("📋 Duplicate").clicked() {
-                    self.show_duplicate_dialog = true;
-                    let current = &config.profiles[*selected_idx];
-                    self.edit_profile_name = format!("{} (copy)", current.name);
-                    self.edit_profile_desc = current.description.clone();
-                }
-
-                if ui.button("✏ Edit").clicked() {
-                    self.show_edit_dialog = true;
-                    let current = &config.profiles[*selected_idx];
-                    self.edit_profile_name = current.name.clone();
-                    self.edit_profile_desc = current.description.clone();
-                }
-                
-                if ui.button("🗑 Delete").clicked() && config.profiles.len() > 1 {
-                    self.show_delete_confirm = true;
-                }
-                
-                if config.profiles.len() == 1 {
-                    ui.label("(Cannot delete last profile)");
-                }
-            });
         });
+        
+        action
+    }
+
+    /// Render the profile management buttons (New, Duplicate, Edit, Delete)
+    pub fn render_buttons(
+        &mut self,
+        ui: &mut egui::Ui,
+        config: &Config,
+        selected_idx: usize,
+    ) {
+        ui.horizontal(|ui| {
+            if ui.button("➕ New").clicked() {
+                self.show_new_dialog = true;
+                self.edit_profile_name.clear();
+                self.edit_profile_desc.clear();
+            }
+            
+            if ui.button("📋 Duplicate").clicked() {
+                self.show_duplicate_dialog = true;
+                let current = &config.profiles[selected_idx];
+                self.edit_profile_name = format!("{} (copy)", current.name);
+                self.edit_profile_desc = current.description.clone();
+            }
+
+            if ui.button("✏ Edit").clicked() {
+                self.show_edit_dialog = true;
+                let current = &config.profiles[selected_idx];
+                self.edit_profile_name = current.name.clone();
+                self.edit_profile_desc = current.description.clone();
+            }
+            
+            if ui.button("🗑 Delete").clicked() && config.profiles.len() > 1 {
+                self.show_delete_confirm = true;
+            }
+            
+            if config.profiles.len() == 1 {
+                ui.label("(Cannot delete last profile)");
+            }
+        });
+    }
+
+    /// Full UI render with both dropdown and buttons
+    pub fn ui(
+        &mut self,
+        ui: &mut egui::Ui,
+        config: &mut Config,
+        selected_idx: &mut usize,
+    ) -> ProfileAction {
+        let mut action = self.render_dropdown(ui, config, selected_idx);
+        ui.add_space(ITEM_SPACING);
+        self.render_buttons(ui, config, *selected_idx);
         
         // Modal dialogs
         if self.show_new_dialog {

@@ -176,18 +176,11 @@ struct ManagerApp {
     config: Config,
     selected_profile_idx: usize,
     profile_selector: ProfileSelector,
+    behavior_settings_state: components::behavior_settings::BehaviorSettingsState,
     hotkey_settings_state: components::hotkey_settings::HotkeySettingsState,
     visual_settings_state: components::visual_settings::VisualSettingsState,
+    cycle_order_settings_state: components::cycle_order_settings::CycleOrderSettingsState,
     settings_changed: bool,
-    
-    // UI state
-    active_tab: ActiveTab,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-enum ActiveTab {
-    GlobalSettings,
-    ProfileSettings,
 }
 
 impl ManagerApp {
@@ -195,13 +188,14 @@ impl ManagerApp {
         info!("Initializing egui manager");
 
         // Configure egui style for larger text
-        let mut style = (*cc.egui_ctx.style()).clone();
-        
+        let style = (*cc.egui_ctx.style()).clone();
+
         // Increase all text sizes by 2 points
-        style.text_styles.iter_mut().for_each(|(_, font_id)| {
-            font_id.size += 2.0;
-        });
-        
+        //let mut style_modified = style.clone();
+        //style_modified.text_styles.iter_mut().for_each(|(_, font_id)| {
+        //    font_id.size += 2.0;
+        //});
+
         cc.egui_ctx.set_style(style);
 
         // Create channel for tray icon commands
@@ -252,12 +246,14 @@ impl ManagerApp {
             .position(|p| p.name == config.global.selected_profile)
             .unwrap_or(0);
 
-        // Initialize hotkey settings state with current profile
-        let mut hotkey_settings_state = components::hotkey_settings::HotkeySettingsState::default();
-        hotkey_settings_state.load_from_profile(&config.profiles[selected_profile_idx]);
-        
-        // Initialize visual settings state
+        // Initialize component states
+        let behavior_settings_state = components::behavior_settings::BehaviorSettingsState::default();
+        let hotkey_settings_state = components::hotkey_settings::HotkeySettingsState::default();
         let visual_settings_state = components::visual_settings::VisualSettingsState::default();
+
+        // Initialize cycle order settings state with current profile
+        let mut cycle_order_settings_state = components::cycle_order_settings::CycleOrderSettingsState::default();
+        cycle_order_settings_state.load_from_profile(&config.profiles[selected_profile_idx]);
 
         #[cfg(target_os = "linux")]
         let mut app = Self {
@@ -271,10 +267,11 @@ impl ManagerApp {
             config,
             selected_profile_idx,
             profile_selector: ProfileSelector::new(),
+            behavior_settings_state,
             hotkey_settings_state,
             visual_settings_state,
+            cycle_order_settings_state,
             settings_changed: false,
-            active_tab: ActiveTab::GlobalSettings,
         };
 
         #[cfg(not(target_os = "linux"))]
@@ -287,10 +284,11 @@ impl ManagerApp {
             config,
             selected_profile_idx,
             profile_selector: ProfileSelector::new(),
+            behavior_settings_state,
             hotkey_settings_state,
             visual_settings_state,
+            cycle_order_settings_state,
             settings_changed: false,
-            active_tab: ActiveTab::GlobalSettings,
         };
 
         if let Err(err) = app.start_daemon() {
@@ -571,27 +569,67 @@ impl ManagerApp {
         }
     }
 
-    fn render_global_settings_tab(&mut self, ui: &mut egui::Ui) {
-        // Global Settings
-        if components::global_settings::ui(ui, &mut self.config.global) {
-            self.settings_changed = true;
-        }
-    }
-    
-    fn render_profile_settings_tab(&mut self, ui: &mut egui::Ui) {
-        // Profile Selector
-        let action = self.profile_selector.ui(
-            ui,
-            &mut self.config,
-            &mut self.selected_profile_idx
-        );
-        
+    fn render_unified_settings(&mut self, ui: &mut egui::Ui) {
+        // Row 1: Profile dropdown group + Save/Discard buttons
+        let action = ui.horizontal(|ui| {
+            // Profile dropdown group
+            let action = self.profile_selector.render_dropdown(
+                ui,
+                &mut self.config,
+                &mut self.selected_profile_idx
+            );
+
+            // Save/Discard buttons aligned to the right
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                // Discard button
+                if ui.button("↶ Discard Changes").clicked() {
+                    self.discard_changes();
+                }
+
+                // Save button
+                if ui.button("💾 Save & Apply").clicked() {
+                    if let Err(err) = self.save_config() {
+                        error!(error = ?err, "Failed to save config");
+                        self.status_message = Some(StatusMessage {
+                            text: format!("Save failed: {err}"),
+                            color: STATUS_STOPPED,
+                        });
+                    } else {
+                        self.reload_daemon_config();
+                    }
+                }
+            });
+
+            action
+        }).inner;
+
+        ui.add_space(ITEM_SPACING);
+
+        // Row 2: Profile management buttons on left, status text on right
+        ui.horizontal(|ui| {
+            self.profile_selector.render_buttons(
+                ui,
+                &self.config,
+                self.selected_profile_idx
+            );
+
+            // Status text aligned to the right
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if self.settings_changed {
+                    ui.colored_label(
+                        egui::Color32::from_rgb(255, 200, 0),
+                        "● Unsaved changes"
+                    );
+                }
+            });
+        });
+
         match action {
             ProfileAction::SwitchProfile => {
-                // Load cycle group text when switching profiles
+                // Load cycle order text when switching profiles
                 let current_profile = &self.config.profiles[self.selected_profile_idx];
-                self.hotkey_settings_state.load_from_profile(current_profile);
-                
+                self.cycle_order_settings_state.load_from_profile(current_profile);
+
                 // Save config and reload daemon
                 if let Err(err) = self.save_config() {
                     error!(error = ?err, "Failed to save config after profile switch");
@@ -622,17 +660,26 @@ impl ManagerApp {
         ui.separator();
         ui.add_space(SECTION_SPACING);
 
-        // Visual Settings and Hotkey Settings side-by-side
+        // 3-column layout: Behavior Settings | Visual+Hotkey Settings | Character Cycle Order
         let current_profile = &mut self.config.profiles[self.selected_profile_idx];
-        
-        ui.columns(2, |columns| {
-            // Left column: Visual Settings
-            if components::visual_settings::ui(&mut columns[0], current_profile, &mut self.visual_settings_state) {
+
+        ui.columns(3, |columns| {
+            // Column 1: Behavior Settings
+            if components::behavior_settings::ui(&mut columns[0], &mut self.config.global, current_profile, &mut self.behavior_settings_state) {
                 self.settings_changed = true;
             }
-            
-            // Right column: Hotkey Settings
+
+            // Column 2: Visual Settings + Hotkey Settings
+            if components::visual_settings::ui(&mut columns[1], current_profile, &mut self.visual_settings_state) {
+                self.settings_changed = true;
+            }
+            columns[1].add_space(SECTION_SPACING);
             if components::hotkey_settings::ui(&mut columns[1], current_profile, &mut self.hotkey_settings_state) {
+                self.settings_changed = true;
+            }
+
+            // Column 3: Character Cycle Order
+            if components::cycle_order_settings::ui(&mut columns[2], current_profile, &mut self.cycle_order_settings_state) {
                 self.settings_changed = true;
             }
         });
@@ -669,59 +716,11 @@ impl eframe::App for ManagerApp {
             });
 
             ui.separator();
-
-            // Tab Bar
-            ui.horizontal(|ui| {
-                let prev_tab = self.active_tab;
-                ui.selectable_value(&mut self.active_tab, ActiveTab::GlobalSettings, "⚙ Global Settings");
-                ui.selectable_value(&mut self.active_tab, ActiveTab::ProfileSettings, "📋 Profile Settings");
-                
-                // When switching to Profile Settings tab, reload character list to pick up new characters
-                if self.active_tab == ActiveTab::ProfileSettings && prev_tab != ActiveTab::ProfileSettings {
-                    self.reload_character_list();
-                }
-            });
-
-            ui.add_space(SECTION_SPACING);
-            ui.separator();
             ui.add_space(SECTION_SPACING);
 
-            // Tab Content
+            // Unified Settings Content (3-column layout)
             egui::ScrollArea::vertical().show(ui, |ui| {
-                match self.active_tab {
-                    ActiveTab::GlobalSettings => self.render_global_settings_tab(ui),
-                    ActiveTab::ProfileSettings => self.render_profile_settings_tab(ui),
-                }
-            });
-
-            ui.add_space(SECTION_SPACING);
-            ui.separator();
-            ui.add_space(SECTION_SPACING);
-
-            // Save/Discard buttons (always visible at bottom)
-            ui.horizontal(|ui| {
-                if ui.button("💾 Save & Apply").clicked() {
-                    if let Err(err) = self.save_config() {
-                        error!(error = ?err, "Failed to save config");
-                        self.status_message = Some(StatusMessage {
-                            text: format!("Save failed: {err}"),
-                            color: STATUS_STOPPED,
-                        });
-                    } else {
-                        self.reload_daemon_config();
-                    }
-                }
-                
-                if ui.button("↶ Discard Changes").clicked() {
-                    self.discard_changes();
-                }
-                
-                if self.settings_changed {
-                    ui.colored_label(
-                        egui::Color32::from_rgb(255, 200, 0),
-                        "● Unsaved changes"
-                    );
-                }
+                self.render_unified_settings(ui);
             });
         });
 
