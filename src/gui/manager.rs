@@ -585,7 +585,7 @@ impl ManagerApp {
             // Save/Discard buttons aligned to the right
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Discard button
-                if ui.button("⮌ Discard Changes").clicked() {
+                if ui.button("✖ Discard Changes").clicked() {
                     self.discard_changes();
                 }
 
