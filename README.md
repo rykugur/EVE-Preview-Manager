@@ -69,7 +69,6 @@ chmod +x ./eve-preview-manager
 git clone https://github.com/h0lylag/EVE-Preview-Manager.git
 cd EVE-Preview-Manager
 cargo build --release
-sudo install -Dm755 target/release/eve-preview-manager /usr/local/bin/eve-preview-manager
 ```
 
 ## Usage
