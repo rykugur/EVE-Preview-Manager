@@ -56,9 +56,9 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut VisualSettingsSt
             }
         });
         
-        // Border settings (only if enabled)
-        if profile.thumbnail_border {
-            ui.indent("border_settings", |ui| {
+        // Border settings (greyed out if disabled)
+        ui.indent("border_settings", |ui| {
+            ui.add_enabled_ui(profile.thumbnail_border, |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Border Size:");
                     if ui.add(egui::DragValue::new(&mut profile.thumbnail_border_size)
@@ -83,7 +83,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut VisualSettingsSt
                         }
                 });
             });
-        }
+        });
         
         ui.add_space(ITEM_SPACING);
         
