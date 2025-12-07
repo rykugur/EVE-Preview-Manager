@@ -1,0 +1,60 @@
+name: Build
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 2
+    
+    - name: Install dependencies
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libfontconfig1-dev libdbus-1-dev \
+          libx11-dev libxext-dev libxrender-dev libxrandr-dev libxcomposite-dev \
+          libxdamage-dev libxfixes-dev libxkbcommon-dev libwayland-dev \
+          libegl1-mesa-dev libgl1-mesa-dev
+    
+    - name: Check if version changed
+      id: version_check
+      run: |
+        # Extract version from current commit
+        CURR_VERSION=$(grep '^version' Cargo.toml | head -n 1 | cut -d '"' -f2)
+
+        # Extract version from previous commit (if file existed)
+        PREV_VERSION=$(git show HEAD~1:Cargo.toml 2>/dev/null | grep '^version' | head -n 1 | cut -d '"' -f2)
+
+        echo "Current: $CURR_VERSION"
+        echo "Previous: $PREV_VERSION"
+
+        if [ "$CURR_VERSION" = "$PREV_VERSION" ]; then
+          echo "changed=false" >> $GITHUB_OUTPUT
+        else
+          echo "changed=true" >> $GITHUB_OUTPUT
+        fi
+    
+    - name: Build
+      if: steps.version_check.outputs.changed == 'true'
+      run: cargo build --release --verbose
+    
+    - name: Run tests
+      if: steps.version_check.outputs.changed == 'true'
+      run: cargo test --verbose
+    
+    - name: Upload binary
+      if: steps.version_check.outputs.changed == 'true'
+      uses: actions/upload-artifact@v4
+      with:
+        name: eve-preview-manager-linux-binary
+        path: target/release/eve-preview-manager
