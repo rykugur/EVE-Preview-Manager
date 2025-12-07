@@ -61,17 +61,17 @@ fn get_eves<'a>(
                 .reply()
                 .context("Failed to get geometry reply during initial scan")?;
             
-            // ALWAYS update character_positions in memory (for manual saves)
+            // ALWAYS update character_thumbnails in memory (for manual saves)
             let settings = crate::types::CharacterSettings::new(
                 geom.x,
                 geom.y,
                 eve.dimensions.width,
                 eve.dimensions.height,
             );
-            daemon_config.character_positions.insert(eve.character_name.clone(), settings);
+            daemon_config.character_thumbnails.insert(eve.character_name.clone(), settings);
             
             // Conditionally persist to disk based on auto-save setting
-            if daemon_config.profile.auto_save_thumbnail_positions {
+            if daemon_config.profile.thumbnail_auto_save_position {
                 daemon_config.save()
                     .context(format!("Failed to save initial position during scan for '{}'", eve.character_name))?;
             }
@@ -121,26 +121,26 @@ pub fn run_preview_daemon() -> Result<()> {
     
     let mut session_state = SessionState::new();
     info!(
-        count = daemon_config.character_positions.len(),
+        count = daemon_config.character_thumbnails.len(),
         "Loaded character positions from config"
     );
     
     // Initialize cycle state from config
-    let mut cycle_state = CycleState::new(daemon_config.profile.cycle_group.clone());
+    let mut cycle_state = CycleState::new(daemon_config.profile.hotkey_cycle_group.clone());
     
     // Create channel for hotkey thread → main loop
     let (hotkey_tx, hotkey_rx) = mpsc::channel();
     
     // Spawn hotkey listener (optional - skip if permissions denied or not configured)
     let _hotkey_handle = if let (Some(forward_key), Some(backward_key)) =
-        (&daemon_config.profile.cycle_forward_keys, &daemon_config.profile.cycle_backward_keys)
+        (&daemon_config.profile.hotkey_cycle_forward, &daemon_config.profile.hotkey_cycle_backward)
     {
         if hotkeys::check_permissions() {
             match spawn_listener(
                 hotkey_tx,
                 forward_key.clone(),
                 backward_key.clone(),
-                daemon_config.profile.selected_hotkey_device.clone(),
+                daemon_config.profile.hotkey_input_device.clone(),
             ) {
                 Ok(handle) => {
                     info!(
@@ -171,37 +171,37 @@ pub fn run_preview_daemon() -> Result<()> {
         .context("Failed to cache X11 atoms at startup")?;
     
     // Initialize font renderer with configured font (or fallback to system default)
-    let font_renderer = if !daemon_config.profile.text_font_family.is_empty() {
+    let font_renderer = if !daemon_config.profile.thumbnail_text_font.is_empty() {
         info!(
-            configured_font = %daemon_config.profile.text_font_family,
-            size = daemon_config.profile.text_size,
+            configured_font = %daemon_config.profile.thumbnail_text_font,
+            size = daemon_config.profile.thumbnail_text_size,
             "Attempting to load user-configured font"
         );
         // Try user-selected font first
         font::FontRenderer::from_font_name(
-            &daemon_config.profile.text_font_family,
-            daemon_config.profile.text_size as f32
+            &daemon_config.profile.thumbnail_text_font,
+            daemon_config.profile.thumbnail_text_size as f32
         )
         .or_else(|e| {
             warn!(
-                font = %daemon_config.profile.text_font_family,
+                font = %daemon_config.profile.thumbnail_text_font,
                 error = ?e,
                 "Failed to load configured font, falling back to system default"
             );
-            font::FontRenderer::from_system_font(&conn, daemon_config.profile.text_size as f32)
+            font::FontRenderer::from_system_font(&conn, daemon_config.profile.thumbnail_text_size as f32)
         })
     } else {
         info!(
-            size = daemon_config.profile.text_size,
+            size = daemon_config.profile.thumbnail_text_size,
             "No font configured, using system default"
         );
-        font::FontRenderer::from_system_font(&conn, daemon_config.profile.text_size as f32)
+        font::FontRenderer::from_system_font(&conn, daemon_config.profile.thumbnail_text_size as f32)
     }
-    .context(format!("Failed to initialize font renderer with size {}", daemon_config.profile.text_size))?;
+    .context(format!("Failed to initialize font renderer with size {}", daemon_config.profile.thumbnail_text_size))?;
     
     info!(
-        size = daemon_config.profile.text_size,
-        font = %daemon_config.profile.text_font_family,
+        size = daemon_config.profile.thumbnail_text_size,
+        font = %daemon_config.profile.thumbnail_text_font,
         "Font renderer initialized"
     );
     
@@ -271,7 +271,7 @@ pub fn run_preview_daemon() -> Result<()> {
                 info!(command = ?command, "Received hotkey command");
 
                 // Build logged-out map if feature is enabled in profile
-                let logged_out_map = if daemon_config.profile.include_logged_out_in_cycle {
+                let logged_out_map = if daemon_config.profile.hotkey_logged_out_cycle {
                     Some(&session_state.window_last_character)
                 } else {
                     None
@@ -295,7 +295,7 @@ pub fn run_preview_daemon() -> Result<()> {
                     );
                     if let Err(e) = activate_window(&conn, screen, &atoms, window) {
                         error!(window = window, error = %e, "Failed to activate window");
-                    } else if daemon_config.profile.minimize_clients_on_switch {
+                    } else if daemon_config.profile.client_minimize_on_switch {
                         // Minimize all other EVE clients after successful activation
                         let other_windows: Vec<Window> = eves
                             .keys()

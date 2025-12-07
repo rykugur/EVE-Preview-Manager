@@ -37,12 +37,12 @@ impl SessionState {
         &self,
         character_name: &str,
         window: Window,
-        character_positions: &HashMap<String, CharacterSettings>,
+        character_thumbnails: &HashMap<String, CharacterSettings>,
         preserve_position_on_swap: bool,
     ) -> Option<Position> {
         // If character has a name (not just "EVE"), check character position from config
         if !character_name.is_empty() {
-            if let Some(settings) = character_positions.get(character_name) {
+            if let Some(settings) = character_thumbnails.get(character_name) {
                 info!(character = %character_name, x = settings.x, y = settings.y, "Using saved position for character");
                 return Some(settings.position());
             }

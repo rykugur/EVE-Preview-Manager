@@ -85,12 +85,12 @@ pub fn check_and_create_window<'a>(
         let position = state.get_position(
             &character_name, 
             window, 
-            &daemon_config.character_positions,
-            daemon_config.profile.preserve_thumbnail_position_on_swap,
+            &daemon_config.character_thumbnails,
+            daemon_config.profile.thumbnail_preserve_position_on_swap,
         );
         
         // Get dimensions from CharacterSettings or use auto-detected defaults
-        let dimensions = if let Some(settings) = daemon_config.character_positions.get(&character_name) {
+        let dimensions = if let Some(settings) = daemon_config.character_thumbnails.get(&character_name) {
             // If dimensions are 0 (not yet saved), auto-detect
             if settings.dimensions.width == 0 || settings.dimensions.height == 0 {
                 let (w, h) = daemon_config.default_thumbnail_size(

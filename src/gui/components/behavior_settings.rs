@@ -42,7 +42,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
         ui.add_space(ITEM_SPACING);
 
         // Minimize clients on switch
-        if ui.checkbox(&mut profile.minimize_clients_on_switch,
+        if ui.checkbox(&mut profile.client_minimize_on_switch,
             "Minimize EVE clients when switching focus").changed() {
             changed = true;
         }
@@ -55,7 +55,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
         ui.add_space(ITEM_SPACING);
 
         // Hide when no focus
-        if ui.checkbox(&mut profile.hide_when_no_focus,
+        if ui.checkbox(&mut profile.thumbnail_hide_not_focused,
             "Hide thumbnails when EVE loses focus").changed() {
             changed = true;
         }
@@ -68,7 +68,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
         ui.add_space(ITEM_SPACING);
 
         // Preserve thumbnail position on character swap
-        if ui.checkbox(&mut profile.preserve_thumbnail_position_on_swap,
+        if ui.checkbox(&mut profile.thumbnail_preserve_position_on_swap,
             "Keep thumbnail position when switching characters").changed() {
             changed = true;
         }
@@ -83,7 +83,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
         // Snap threshold
         ui.horizontal(|ui| {
             ui.label("Thumbnail Snap Distance:");
-            if ui.add(egui::Slider::new(&mut profile.snap_threshold, 0..=50)
+            if ui.add(egui::Slider::new(&mut profile.thumbnail_snap_threshold, 0..=50)
                 .suffix(" px")).changed() {
                 changed = true;
             }
@@ -112,7 +112,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
         ];
 
         // Calculate current aspect ratio and find closest matching preset
-        let current_ratio = profile.default_thumbnail_width as f32 / profile.default_thumbnail_height as f32;
+        let current_ratio = profile.thumbnail_default_width as f32 / profile.thumbnail_default_height as f32;
         let detected_preset = {
             let mut preset = "Custom";
             for (name, ratio) in &aspect_ratios[..aspect_ratios.len()-1] {
@@ -142,8 +142,8 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
                             mode_changed = true;
                             if *ratio > 0.0 {
                                 // Update height based on width and selected ratio
-                                profile.default_thumbnail_height =
-                                    (profile.default_thumbnail_width as f32 / ratio).round() as u16;
+                                profile.thumbnail_default_height =
+                                    (profile.thumbnail_default_width as f32 / ratio).round() as u16;
                                 changed = true;
                             }
                         }
@@ -161,14 +161,14 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
         // Width slider (primary control)
         ui.horizontal(|ui| {
             ui.label("Width:");
-            if ui.add(egui::Slider::new(&mut profile.default_thumbnail_width, 100..=800)
+            if ui.add(egui::Slider::new(&mut profile.thumbnail_default_width, 100..=800)
                 .suffix(" px")).changed() {
                 // If not custom, maintain aspect ratio
                 if selected_mode != "Custom" {
                     for (name, ratio) in &aspect_ratios[..aspect_ratios.len()-1] {
                         if name == &selected_mode.as_str() {
-                            profile.default_thumbnail_height =
-                                (profile.default_thumbnail_width as f32 / ratio).round() as u16;
+                            profile.thumbnail_default_height =
+                                (profile.thumbnail_default_width as f32 / ratio).round() as u16;
                             break;
                         }
                     }
@@ -183,13 +183,13 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
             ui.label("Height:");
 
             if is_custom {
-                if ui.add(egui::Slider::new(&mut profile.default_thumbnail_height, 50..=600)
+                if ui.add(egui::Slider::new(&mut profile.thumbnail_default_height, 50..=600)
                     .suffix(" px")).changed() {
                     changed = true;
                 }
             } else {
                 ui.add_enabled(false,
-                    egui::Slider::new(&mut profile.default_thumbnail_height, 50..=600)
+                    egui::Slider::new(&mut profile.thumbnail_default_height, 50..=600)
                         .suffix(" px"));
             }
         });
@@ -198,9 +198,9 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
         ui.horizontal(|ui| {
             ui.weak(format!(
                 "Preview: {}×{} ({:.2}:1 ratio)",
-                profile.default_thumbnail_width,
-                profile.default_thumbnail_height,
-                profile.default_thumbnail_width as f32 / profile.default_thumbnail_height as f32
+                profile.thumbnail_default_width,
+                profile.thumbnail_default_height,
+                profile.thumbnail_default_width as f32 / profile.thumbnail_default_height as f32
             ));
         });
 
@@ -236,7 +236,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
                     ui.separator();
 
                     // Add individual characters
-                    let mut char_names: Vec<_> = profile.character_positions.keys().cloned().collect();
+                    let mut char_names: Vec<_> = profile.character_thumbnails.keys().cloned().collect();
                     char_names.sort();
                     for char_name in char_names {
                         ui.selectable_value(&mut selected_target, char_name.clone(), char_name);
@@ -254,12 +254,12 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
         if is_enabled && selected_target != state.last_target {
             let (width, height) = if selected_target == "All Characters" {
                 // Use first character's dimensions as baseline, or default
-                profile.character_positions.values().next()
+                profile.character_thumbnails.values().next()
                     .map(|s| (s.dimensions.width, s.dimensions.height))
                     .unwrap_or((250, 141))
             } else {
                 // Get specific character's dimensions
-                profile.character_positions.get(&selected_target)
+                profile.character_thumbnails.get(&selected_target)
                     .map(|s| (s.dimensions.width, s.dimensions.height))
                     .unwrap_or((250, 141))
             };
@@ -374,7 +374,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
                         state.show_resize_confirmation = true;
                     } else {
                         // Apply to single character immediately
-                        if let Some(char_settings) = profile.character_positions.get_mut(&selected_target) {
+                        if let Some(char_settings) = profile.character_thumbnails.get_mut(&selected_target) {
                             char_settings.dimensions = new_dimensions;
                             changed = true;
                         }
@@ -396,7 +396,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
                         "Apply {}×{} size to all {} character thumbnails?",
                         dims.width,
                         dims.height,
-                        profile.character_positions.len()
+                        profile.character_thumbnails.len()
                     ));
                     ui.add_space(ITEM_SPACING);
                     ui.label(egui::RichText::new("This will overwrite all individual thumbnail sizes.")
@@ -407,7 +407,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
                     ui.horizontal(|ui| {
                         if ui.button("Yes, Resize All").clicked() {
                             // Apply to all characters
-                            for char_settings in profile.character_positions.values_mut() {
+                            for char_settings in profile.character_thumbnails.values_mut() {
                                 char_settings.dimensions = dims;
                             }
                             changed = true;

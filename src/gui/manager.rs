@@ -39,10 +39,10 @@ impl AppTray {
         match Config::load() {
             Ok(config) => {
                 let profile_names: Vec<String> = config.profiles.iter()
-                    .map(|p| p.name.clone())
+                    .map(|p| p.profile_name.clone())
                     .collect();
                 let current_idx = config.profiles.iter()
-                    .position(|p| p.name == config.global.selected_profile)
+                    .position(|p| p.profile_name == config.global.selected_profile)
                     .unwrap_or(0);
                 (current_idx, profile_names)
             }
@@ -244,7 +244,7 @@ impl ManagerApp {
         // Find selected profile index
         let selected_profile_idx = config.profiles
             .iter()
-            .position(|p| p.name == config.global.selected_profile)
+            .position(|p| p.profile_name == config.global.selected_profile)
             .unwrap_or(0);
 
         // Initialize component states
@@ -371,17 +371,17 @@ impl ManagerApp {
 
             // Find matching profile in disk config to get daemon's character positions
             if let Some(disk_profile) = disk_config.profiles.iter()
-                .find(|p| p.name == gui_profile.name)
+                .find(|p| p.profile_name == gui_profile.profile_name)
             {
                 // Merge character positions: start with GUI's, add disk characters, preserve disk positions
-                for (char_name, disk_settings) in &disk_profile.character_positions {
-                    if let Some(gui_settings) = merged_profile.character_positions.get_mut(char_name) {
+                for (char_name, disk_settings) in &disk_profile.character_thumbnails {
+                    if let Some(gui_settings) = merged_profile.character_thumbnails.get_mut(char_name) {
                         // Character exists in both: keep GUI dimensions, use disk position (x, y)
                         gui_settings.x = disk_settings.x;
                         gui_settings.y = disk_settings.y;
                     } else {
                         // Character only in disk (daemon added it): preserve it completely
-                        merged_profile.character_positions.insert(char_name.clone(), *disk_settings);
+                        merged_profile.character_thumbnails.insert(char_name.clone(), *disk_settings);
                     }
                 }
             }
@@ -447,7 +447,7 @@ impl ManagerApp {
         // Re-find selected profile index after reload
         self.selected_profile_idx = self.config.profiles
             .iter()
-            .position(|p| p.name == self.config.global.selected_profile)
+            .position(|p| p.profile_name == self.config.global.selected_profile)
             .unwrap_or(0);
 
         self.settings_changed = false;
@@ -464,12 +464,12 @@ impl ManagerApp {
             // Merge new characters from disk into GUI config without losing GUI changes
             for (profile_idx, gui_profile) in self.config.profiles.iter_mut().enumerate() {
                 if let Some(disk_profile) = disk_config.profiles.get(profile_idx)
-                    && disk_profile.name == gui_profile.name {
+                    && disk_profile.profile_name == gui_profile.profile_name {
                         // Add any new characters from disk that GUI doesn't know about
-                        for (char_name, char_settings) in &disk_profile.character_positions {
-                            if !gui_profile.character_positions.contains_key(char_name) {
-                                gui_profile.character_positions.insert(char_name.clone(), *char_settings);
-                                info!(character = %char_name, profile = %gui_profile.name, "Detected new character from daemon");
+                        for (char_name, char_settings) in &disk_profile.character_thumbnails {
+                            if !gui_profile.character_thumbnails.contains_key(char_name) {
+                                gui_profile.character_thumbnails.insert(char_name.clone(), *char_settings);
+                                info!(character = %char_name, profile = %gui_profile.profile_name, "Detected new character from daemon");
                             }
                         }
                     }
@@ -530,7 +530,7 @@ impl ManagerApp {
                     // Update config's selected_profile field
                     if idx < self.config.profiles.len() {
                         self.config.global.selected_profile =
-                            self.config.profiles[idx].name.clone();
+                            self.config.profiles[idx].profile_name.clone();
                         self.selected_profile_idx = idx;
 
                         // Clear any pending selection in the GUI profile selector
@@ -740,18 +740,6 @@ impl eframe::App for ManagerApp {
             self.config.global.window_height = new_height;
         }
 
-        // Try to get window position (may be None on Wayland/Android)
-        if let Some(outer_rect) = viewport_info.outer_rect {
-            let new_x = outer_rect.left() as i16;
-            let new_y = outer_rect.top() as i16;
-
-            // Update position if changed
-            if self.config.global.window_x != Some(new_x) || self.config.global.window_y != Some(new_y) {
-                self.config.global.window_x = Some(new_x);
-                self.config.global.window_y = Some(new_y);
-            }
-        }
-
         // Request repaint after short delay to poll for tray events even when unfocused
         // This ensures tray menu actions are processed promptly
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
@@ -797,8 +785,6 @@ impl eframe::App for ManagerApp {
         info!(
             width = self.config.global.window_width,
             height = self.config.global.window_height,
-            x = ?self.config.global.window_x,
-            y = ?self.config.global.window_y,
             "Saving window geometry"
         );
         if let Err(err) = self.config.save_with_strategy(SaveStrategy::OverwriteCharacterPositions) {
@@ -924,11 +910,6 @@ pub fn run_gui() -> Result<()> {
         .with_inner_size([window_width, window_height])
         .with_min_inner_size([WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT])
         .with_title("EVE Preview Manager");
-
-    // Restore window position if saved
-    if let (Some(x), Some(y)) = (config.global.window_x, config.global.window_y) {
-        viewport_builder = viewport_builder.with_position([x as f32, y as f32]);
-    }
 
     if let Some(icon_data) = icon {
         viewport_builder = viewport_builder.with_icon(icon_data);

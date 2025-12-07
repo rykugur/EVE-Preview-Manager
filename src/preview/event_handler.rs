@@ -63,17 +63,17 @@ fn handle_create_notify<'a>(
             .reply()
             .context("Failed to get geometry reply for new thumbnail")?;
         
-        // ALWAYS update character_positions in memory (for manual saves)
+        // ALWAYS update character_thumbnails in memory (for manual saves)
         let settings = crate::types::CharacterSettings::new(
             geom.x,
             geom.y,
             thumbnail.dimensions.width,
             thumbnail.dimensions.height,
         );
-        daemon_config.character_positions.insert(thumbnail.character_name.clone(), settings);
+        daemon_config.character_thumbnails.insert(thumbnail.character_name.clone(), settings);
         
         // Conditionally persist to disk based on auto-save setting
-        if daemon_config.profile.auto_save_thumbnail_positions {
+        if daemon_config.profile.thumbnail_auto_save_position {
             daemon_config.save()
                 .context(format!("Failed to save initial position for new character '{}'", thumbnail.character_name))?;
         }
@@ -272,17 +272,17 @@ fn handle_button_release(
             // Update session state (in-memory only)
             session_state.update_window_position(thumbnail.window, geom.x, geom.y);
             
-            // ALWAYS update character_positions in memory (for manual saves)
+            // ALWAYS update character_thumbnails in memory (for manual saves)
             let settings = crate::types::CharacterSettings::new(
                 geom.x,
                 geom.y,
                 thumbnail.dimensions.width,
                 thumbnail.dimensions.height,
             );
-            daemon_config.character_positions.insert(thumbnail.character_name.clone(), settings);
+            daemon_config.character_thumbnails.insert(thumbnail.character_name.clone(), settings);
             
             // Conditionally persist to disk based on auto-save setting
-            if daemon_config.profile.auto_save_thumbnail_positions {
+            if daemon_config.profile.thumbnail_auto_save_position {
                 debug!(window = thumbnail.window, x = geom.x, y = geom.y, "Saved position after drag (auto-save enabled)");
                 daemon_config.save()
                     .context(format!("Failed to save position for '{}' after drag", thumbnail.character_name))?;
@@ -298,7 +298,7 @@ fn handle_button_release(
     
     // After releasing mutable borrow, optionally minimize other EVE clients
     if is_left_click
-        && daemon_config.profile.minimize_clients_on_switch
+        && daemon_config.profile.client_minimize_on_switch
         && let Some(clicked_src) = clicked_src
     {
         for other_window in eves
@@ -333,7 +333,7 @@ fn handle_motion_notify(
         return Ok(());  // No thumbnail is being dragged
     };
     
-    let snap_threshold = daemon_config.profile.snap_threshold;
+    let snap_threshold = daemon_config.profile.thumbnail_snap_threshold;
     
     // Get the dragging thumbnail and clone snap targets to avoid borrow conflict
     // Snap targets were computed once in ButtonPress, avoiding repeated X11 queries
@@ -465,17 +465,17 @@ pub fn handle_event<'a>(
                     .reply()
                     .context("Failed to get geometry reply for newly detected thumbnail")?;
                 
-                // ALWAYS update character_positions in memory (for manual saves)
+                // ALWAYS update character_thumbnails in memory (for manual saves)
                 let settings = crate::types::CharacterSettings::new(
                     geom.x,
                     geom.y,
                     thumbnail.dimensions.width,
                     thumbnail.dimensions.height,
                 );
-                daemon_config.character_positions.insert(thumbnail.character_name.clone(), settings);
+                daemon_config.character_thumbnails.insert(thumbnail.character_name.clone(), settings);
                 
                 // Conditionally persist to disk based on auto-save setting
-                if daemon_config.profile.auto_save_thumbnail_positions {
+                if daemon_config.profile.thumbnail_auto_save_position {
                     daemon_config.save()
                         .context(format!("Failed to save initial position for newly detected character '{}'", thumbnail.character_name))?;
                 }

@@ -30,12 +30,12 @@ impl CycleOrderSettingsState {
 
     /// Load cycle group from profile into text buffer
     pub fn load_from_profile(&mut self, profile: &Profile) {
-        self.cycle_group_text = profile.cycle_group.join("\n");
+        self.cycle_group_text = profile.hotkey_cycle_group.join("\n");
     }
 
     /// Parse text buffer back into profile's cycle group
     fn save_to_profile(&self, profile: &mut Profile) {
-        profile.cycle_group = self.cycle_group_text
+        profile.hotkey_cycle_group = self.cycle_group_text
             .lines()
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
@@ -83,7 +83,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut CycleOrderSettin
                 state.show_add_characters_popup = true;
                 // Initialize selections for all available characters (unchecked by default)
                 state.character_selections.clear();
-                for char_name in profile.character_positions.keys() {
+                for char_name in profile.character_thumbnails.keys() {
                     state.character_selections.insert(char_name.clone(), false);
                 }
             }
@@ -128,7 +128,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut CycleOrderSettin
                 let (_, dropped_payload) = ui.dnd_drop_zone::<usize, ()>(frame, |ui| {
                     ui.set_min_height(100.0);
 
-                    for (row_idx, character) in profile.cycle_group.iter().enumerate() {
+                    for (row_idx, character) in profile.hotkey_cycle_group.iter().enumerate() {
                         let item_id = egui::Id::new("cycle_character").with(row_idx);
 
                         // Make entire row draggable
@@ -145,7 +145,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut CycleOrderSettin
                         }).response;
 
                         // Add separator line between items
-                        if row_idx < profile.cycle_group.len() - 1 {
+                        if row_idx < profile.hotkey_cycle_group.len() - 1 {
                             ui.separator();
                         }
 
@@ -193,13 +193,13 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut CycleOrderSettin
                 // Handle drop onto empty area (append to end)
                 if let Some(dragged_payload) = dropped_payload {
                     from_idx = Some(*dragged_payload);
-                    to_idx = Some(profile.cycle_group.len());
+                    to_idx = Some(profile.hotkey_cycle_group.len());
                     changed = true;
                 }
 
                 // Perform deletion
                 if let Some(idx) = to_delete {
-                    profile.cycle_group.remove(idx);
+                    profile.hotkey_cycle_group.remove(idx);
                 }
 
                 // Perform reordering
@@ -210,9 +210,9 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut CycleOrderSettin
                     }
 
                     if from != to {
-                        let item = profile.cycle_group.remove(from);
-                        let insert_idx = to.min(profile.cycle_group.len());
-                        profile.cycle_group.insert(insert_idx, item);
+                        let item = profile.hotkey_cycle_group.remove(from);
+                        let insert_idx = to.min(profile.hotkey_cycle_group.len());
+                        profile.hotkey_cycle_group.insert(insert_idx, item);
                     }
                 }
             }
@@ -221,7 +221,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut CycleOrderSettin
         ui.add_space(ITEM_SPACING / 2.0);
 
         ui.label(egui::RichText::new(
-            format!("Current cycle order: {} character(s)", profile.cycle_group.len()))
+            format!("Current cycle order: {} character(s)", profile.hotkey_cycle_group.len()))
             .small()
             .weak());
     });
@@ -268,7 +268,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut CycleOrderSettin
                         for char_name in char_names {
                             if let Some(selected) = state.character_selections.get_mut(&char_name) {
                                 // Show if already in cycle group
-                                let already_in_cycle = profile.cycle_group.contains(&char_name);
+                                let already_in_cycle = profile.hotkey_cycle_group.contains(&char_name);
                                 let label = if already_in_cycle {
                                     format!("{} (already in cycle)", char_name)
                                 } else {
@@ -288,8 +288,8 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut CycleOrderSettin
                     if ui.button("OK").clicked() {
                         // Add selected characters that aren't already in cycle group
                         for (char_name, selected) in &state.character_selections {
-                            if *selected && !profile.cycle_group.contains(char_name) {
-                                profile.cycle_group.push(char_name.clone());
+                            if *selected && !profile.hotkey_cycle_group.contains(char_name) {
+                                profile.hotkey_cycle_group.push(char_name.clone());
                                 changed = true;
                             }
                         }

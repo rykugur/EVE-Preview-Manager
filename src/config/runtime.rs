@@ -32,7 +32,7 @@ pub struct DisplayConfig {
 #[derive(Debug)]
 pub struct DaemonConfig {
     pub profile: crate::config::profile::Profile,
-    pub character_positions: HashMap<String, CharacterSettings>,
+    pub character_thumbnails: HashMap<String, CharacterSettings>,
 }
 
 impl DaemonConfig {
@@ -45,34 +45,34 @@ impl DaemonConfig {
 
     /// Get default thumbnail dimensions from profile settings
     pub fn default_thumbnail_size(&self, _screen_width: u16, _screen_height: u16) -> (u16, u16) {
-        (self.profile.default_thumbnail_width, self.profile.default_thumbnail_height)
+        (self.profile.thumbnail_default_width, self.profile.thumbnail_default_height)
     }
 
     /// Build DisplayConfig from current settings
     pub fn build_display_config(&self) -> DisplayConfig {
-        let border_color = HexColor::parse(&self.profile.border_color)
+        let border_color = HexColor::parse(&self.profile.thumbnail_border_color)
             .map(|c| c.to_x11_color())
             .unwrap_or_else(|| {
-                error!(border_color = %self.profile.border_color, "Invalid border_color hex, using default");
+                error!(border_color = %self.profile.thumbnail_border_color, "Invalid border_color hex, using default");
                 HexColor::from_argb32(0xFFFF0000).to_x11_color()
             });
 
-        let text_color = HexColor::parse(&self.profile.text_color)
+        let text_color = HexColor::parse(&self.profile.thumbnail_text_color)
             .map(|c| c.argb32())
             .unwrap_or_else(|| {
-                error!(text_color = %self.profile.text_color, "Invalid text_color hex, using default");
+                error!(text_color = %self.profile.thumbnail_text_color, "Invalid text_color hex, using default");
                 HexColor::from_argb32(0xFF_FF_FF_FF).argb32()
             });
 
-        let opacity = Opacity::from_percent(self.profile.opacity_percent).to_argb32();
+        let opacity = Opacity::from_percent(self.profile.thumbnail_opacity).to_argb32();
 
         DisplayConfig {
             opacity,
-            border_size: self.profile.border_size,
+            border_size: self.profile.thumbnail_border_size,
             border_color,
-            text_offset: TextOffset::from_border_edge(self.profile.text_x, self.profile.text_y),
+            text_offset: TextOffset::from_border_edge(self.profile.thumbnail_text_x, self.profile.thumbnail_text_y),
             text_color,
-            hide_when_no_focus: self.profile.hide_when_no_focus,
+            hide_when_no_focus: self.profile.thumbnail_hide_not_focused,
         }
     }
 
@@ -100,16 +100,16 @@ impl DaemonConfig {
     fn from_profile_config(config: crate::config::profile::Config) -> Self {
         let profile = config.profiles
             .iter()
-            .find(|p| p.name == config.global.selected_profile)
+            .find(|p| p.profile_name == config.global.selected_profile)
             .or_else(|| config.profiles.first())
             .expect("Config must have at least one profile")
             .clone();
 
-        info!(profile = %profile.name, "Using profile for daemon settings");
+        info!(profile = %profile.profile_name, "Using profile for daemon settings");
 
         DaemonConfig {
             profile: profile.clone(),
-            character_positions: profile.character_positions.clone(),
+            character_thumbnails: profile.character_thumbnails.clone(),
         }
     }
 
@@ -131,11 +131,11 @@ impl DaemonConfig {
         let selected_name = profile_config.global.selected_profile.clone();
         let profile_idx = profile_config.profiles
             .iter()
-            .position(|p| p.name == selected_name)
+            .position(|p| p.profile_name == selected_name)
             .unwrap_or(0);
 
-        let profile_positions = &mut profile_config.profiles[profile_idx].character_positions;
-        for (char_name, char_settings) in &self.character_positions {
+        let profile_positions = &mut profile_config.profiles[profile_idx].character_thumbnails;
+        for (char_name, char_settings) in &self.character_thumbnails {
             profile_positions.insert(char_name.clone(), *char_settings);
         }
 
@@ -154,14 +154,14 @@ impl DaemonConfig {
     ) -> Result<Option<Position>> {
         info!(old = %old_name, new = %new_name, "Character change");
 
-        if !old_name.is_empty() && self.profile.auto_save_thumbnail_positions {
+        if !old_name.is_empty() && self.profile.thumbnail_auto_save_position {
             let settings = CharacterSettings::new(
                 current_position.x,
                 current_position.y,
                 current_width,
                 current_height
             );
-            self.character_positions.insert(old_name.to_string(), settings);
+            self.character_thumbnails.insert(old_name.to_string(), settings);
 
             self.save()
                 .context(format!("Failed to save config after character change from '{}' to '{}'", old_name, new_name))?;
@@ -172,11 +172,11 @@ impl DaemonConfig {
                 current_width,
                 current_height
             );
-            self.character_positions.insert(old_name.to_string(), settings);
+            self.character_thumbnails.insert(old_name.to_string(), settings);
         }
 
         if !new_name.is_empty()
-            && let Some(settings) = self.character_positions.get(new_name) {
+            && let Some(settings) = self.character_thumbnails.get(new_name) {
                 info!(character = %new_name, x = settings.x, y = settings.y, "Moving to saved position for character");
                 return Ok(Some(settings.position()));
             }
@@ -203,33 +203,33 @@ mod tests {
 
         DaemonConfig {
             profile: Profile {
-                name: "Test Profile".to_string(),
-                description: String::new(),
-                opacity_percent,
-                border_enabled: true,
-                border_size,
-                border_color: border_color.to_string(),
-                text_size: 18,
-                text_x,
-                text_y,
-                text_color: text_color.to_string(),
-                text_font_family: String::new(),
-                cycle_forward_keys: None,
-                cycle_backward_keys: None,
-                selected_hotkey_device: None,
-                cycle_group: vec![],
-                include_logged_out_in_cycle: false,
+                profile_name: "Test Profile".to_string(),
+                profile_description: String::new(),
+                thumbnail_default_width: 480,
+                thumbnail_default_height: 270,
+                thumbnail_opacity: opacity_percent,
+                thumbnail_border: true,
+                thumbnail_border_size: border_size,
+                thumbnail_border_color: border_color.to_string(),
+                thumbnail_text_size: 18,
+                thumbnail_text_x: text_x,
+                thumbnail_text_y: text_y,
+                thumbnail_text_color: text_color.to_string(),
+                thumbnail_text_font: String::new(),
+                thumbnail_auto_save_position: true,
+                thumbnail_snap_threshold: snap_threshold,
+                thumbnail_hide_not_focused: hide_when_no_focus,
+                thumbnail_preserve_position_on_swap: false,
+                client_minimize_on_switch: false,
+                hotkey_cycle_forward: None,
+                hotkey_cycle_backward: None,
+                hotkey_input_device: None,
+                hotkey_logged_out_cycle: false,
                 hotkey_require_eve_focus: true,
-                auto_save_thumbnail_positions: true,
-                minimize_clients_on_switch: false,
-                hide_when_no_focus,
-                snap_threshold,
-                preserve_thumbnail_position_on_swap: false,
-                default_thumbnail_width: 480,
-                default_thumbnail_height: 270,
-                character_positions: HashMap::new(),
+                hotkey_cycle_group: vec![],
+                character_thumbnails: HashMap::new(),
             },
-            character_positions: HashMap::new(),
+            character_thumbnails: HashMap::new(),
         }
     }
 
@@ -270,12 +270,12 @@ mod tests {
             75, 3, "#FF00FF00", 10, 20, "#FFFFFFFF", false, 15,
         );
 
-        state.character_positions.insert("NewChar".to_string(), CharacterSettings::new(500, 600, 240, 135));
+        state.character_thumbnails.insert("NewChar".to_string(), CharacterSettings::new(500, 600, 240, 135));
 
         let current_pos = Position::new(100, 200);
         let result = state.handle_character_change("OldChar", "NewChar", current_pos, 480, 270);
 
-        let old_settings = state.character_positions.get("OldChar").unwrap();
+        let old_settings = state.character_thumbnails.get("OldChar").unwrap();
         assert_eq!(old_settings.x, 100);
         assert_eq!(old_settings.y, 200);
         assert_eq!(old_settings.dimensions.width, 480);
@@ -286,7 +286,7 @@ mod tests {
             assert_eq!(new_pos.y, 600);
         }
 
-        let new_settings = state.character_positions.get("NewChar").unwrap();
+        let new_settings = state.character_thumbnails.get("NewChar").unwrap();
         assert_eq!(new_settings.x, 500);
         assert_eq!(new_settings.y, 600);
     }
@@ -300,7 +300,7 @@ mod tests {
         let current_pos = Position::new(300, 400);
         let result = state.handle_character_change("LoggingOut", "", current_pos, 480, 270);
 
-        let settings = state.character_positions.get("LoggingOut").unwrap();
+        let settings = state.character_thumbnails.get("LoggingOut").unwrap();
         assert_eq!(settings.x, 300);
         assert_eq!(settings.y, 400);
         assert_eq!(settings.dimensions.width, 480);
@@ -320,7 +320,7 @@ mod tests {
         let current_pos = Position::new(700, 800);
         let result = state.handle_character_change("", "BrandNewChar", current_pos, 480, 270);
 
-        assert!(state.character_positions.is_empty());
+        assert!(state.character_thumbnails.is_empty());
 
         if let Ok(new_pos) = result {
             assert_eq!(new_pos, None);

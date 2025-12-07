@@ -42,7 +42,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut VisualSettingsSt
         // Opacity
         ui.horizontal(|ui| {
             ui.label("Opacity:");
-            if ui.add(egui::Slider::new(&mut profile.opacity_percent, 0..=100)
+            if ui.add(egui::Slider::new(&mut profile.thumbnail_opacity, 0..=100)
                 .suffix("%")).changed() {
                 changed = true;
             }
@@ -51,17 +51,17 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut VisualSettingsSt
         // Border toggle
         ui.horizontal(|ui| {
             ui.label("Borders:");
-            if ui.checkbox(&mut profile.border_enabled, "Enabled").changed() {
+            if ui.checkbox(&mut profile.thumbnail_border, "Enabled").changed() {
                 changed = true;
             }
         });
         
         // Border settings (only if enabled)
-        if profile.border_enabled {
+        if profile.thumbnail_border {
             ui.indent("border_settings", |ui| {
                 ui.horizontal(|ui| {
                     ui.label("Border Size:");
-                    if ui.add(egui::DragValue::new(&mut profile.border_size)
+                    if ui.add(egui::DragValue::new(&mut profile.thumbnail_border_size)
                         .range(1..=20)).changed() {
                         changed = true;
                     }
@@ -69,16 +69,16 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut VisualSettingsSt
                 
                 ui.horizontal(|ui| {
                     ui.label("Border Color:");
-                    let text_edit = egui::TextEdit::singleline(&mut profile.border_color)
+                    let text_edit = egui::TextEdit::singleline(&mut profile.thumbnail_border_color)
                         .desired_width(100.0);
                     if ui.add(text_edit).changed() {
                         changed = true;
                     }
                     
                     // Color picker button - parses hex string, shows picker, updates string
-                    if let Ok(mut color) = parse_hex_color(&profile.border_color)
+                    if let Ok(mut color) = parse_hex_color(&profile.thumbnail_border_color)
                         && ui.color_edit_button_srgba(&mut color).changed() {
-                            profile.border_color = format_hex_color(color);
+                            profile.thumbnail_border_color = format_hex_color(color);
                             changed = true;
                         }
                 });
@@ -90,7 +90,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut VisualSettingsSt
         // Text settings
         ui.horizontal(|ui| {
             ui.label("Text Size:");
-            if ui.add(egui::DragValue::new(&mut profile.text_size)
+            if ui.add(egui::DragValue::new(&mut profile.thumbnail_text_size)
                 .range(8..=48)).changed() {
                 changed = true;
             }
@@ -99,12 +99,12 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut VisualSettingsSt
         ui.horizontal(|ui| {
             ui.label("Text Position:");
             ui.label("X:");
-            if ui.add(egui::DragValue::new(&mut profile.text_x)
+            if ui.add(egui::DragValue::new(&mut profile.thumbnail_text_x)
                 .range(0..=100)).changed() {
                 changed = true;
             }
             ui.label("Y:");
-            if ui.add(egui::DragValue::new(&mut profile.text_y)
+            if ui.add(egui::DragValue::new(&mut profile.thumbnail_text_y)
                 .range(0..=100)).changed() {
                 changed = true;
             }
@@ -112,16 +112,16 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut VisualSettingsSt
         
         ui.horizontal(|ui| {
             ui.label("Text Color:");
-            let text_edit = egui::TextEdit::singleline(&mut profile.text_color)
+            let text_edit = egui::TextEdit::singleline(&mut profile.thumbnail_text_color)
                 .desired_width(100.0);
             if ui.add(text_edit).changed() {
                 changed = true;
             }
             
             // Color picker button
-            if let Ok(mut color) = parse_hex_color(&profile.text_color)
+            if let Ok(mut color) = parse_hex_color(&profile.thumbnail_text_color)
                 && ui.color_edit_button_srgba(&mut color).changed() {
-                    profile.text_color = format_hex_color(color);
+                    profile.thumbnail_text_color = format_hex_color(color);
                     changed = true;
                 }
         });
@@ -136,12 +136,12 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut VisualSettingsSt
             }
             
             egui::ComboBox::from_id_salt("text_font_family")
-                .selected_text(&profile.text_font_family)
+                .selected_text(&profile.thumbnail_text_font)
                 .width(200.0)
                 .show_ui(ui, |ui| {
                     for font_family in &state.available_fonts {
                         if ui.selectable_value(
-                            &mut profile.text_font_family,
+                            &mut profile.thumbnail_text_font,
                             font_family.clone(),
                             font_family
                         ).changed() {

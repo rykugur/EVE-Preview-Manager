@@ -15,9 +15,9 @@ use crate::types::CharacterSettings;
 /// Strategy for saving configuration files
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveStrategy {
-    /// Preserve character_positions entries already on disk (GUI edits)
+    /// Preserve character_thumbnails entries already on disk (GUI edits)
     PreserveCharacterPositions,
-    /// Overwrite character_positions with in-memory data (daemon updates)
+    /// Overwrite character_thumbnails with in-memory data (daemon updates)
     OverwriteCharacterPositions,
 }
 
@@ -39,86 +39,80 @@ pub struct GlobalSettings {
     pub window_width: u16,
     #[serde(default = "default_window_height")]
     pub window_height: u16,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub window_x: Option<i16>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub window_y: Option<i16>,
 }
 
 /// Profile - A complete set of visual and behavioral settings
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
-    pub name: String,
+    pub profile_name: String,
     #[serde(default)]
-    pub description: String,
+    pub profile_description: String,
     
-    // Visual settings
-    #[serde(rename = "opacity_percent")]
-    pub opacity_percent: u8,
+    // Thumbnail default dimensions
+    /// Default thumbnail width for new characters
+    #[serde(default = "default_thumbnail_width")]
+    pub thumbnail_default_width: u16,
+    /// Default thumbnail height for new characters
+    #[serde(default = "default_thumbnail_height")]
+    pub thumbnail_default_height: u16,
+    
+    // Thumbnail visual settings
+    pub thumbnail_opacity: u8,
     #[serde(default = "default_border_enabled")]
-    pub border_enabled: bool,
-    pub border_size: u16,
-    #[serde(rename = "border_color")]
-    pub border_color: String,
-    pub text_size: u16,
-    pub text_x: i16,
-    pub text_y: i16,
-    #[serde(rename = "text_color")]
-    pub text_color: String,
+    pub thumbnail_border: bool,
+    pub thumbnail_border_size: u16,
+    pub thumbnail_border_color: String,
+    pub thumbnail_text_size: u16,
+    pub thumbnail_text_x: i16,
+    pub thumbnail_text_y: i16,
     #[serde(default = "default_text_font_family")]
-    pub text_font_family: String,
+    pub thumbnail_text_font: String,
+    pub thumbnail_text_color: String,
+    
+    // Thumbnail behavior settings
+    /// Automatically save thumbnail positions when dragged
+    /// If disabled, positions can be manually saved via system tray menu
+    #[serde(default = "default_auto_save_thumbnail_positions")]
+    pub thumbnail_auto_save_position: bool,
+    #[serde(default = "default_snap_threshold")]
+    pub thumbnail_snap_threshold: u16,
+    #[serde(default)]
+    pub thumbnail_hide_not_focused: bool,
+    /// When a new character logs in without saved coordinates, inherit the previous character's thumbnail position
+    /// This keeps thumbnails in place when swapping characters on the same EVE client
+    #[serde(default = "default_preserve_thumbnail_position_on_swap")]
+    pub thumbnail_preserve_position_on_swap: bool,
+    
+    // Client behavior settings
+    #[serde(default)]
+    pub client_minimize_on_switch: bool,
     
     // Hotkey settings (per-profile)
-    /// Forward cycle hotkey binding (user must configure)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cycle_forward_keys: Option<crate::config::HotkeyBinding>,
-
-    /// Backward cycle hotkey binding (user must configure)
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub cycle_backward_keys: Option<crate::config::HotkeyBinding>,
-
     /// Selected input device for hotkey monitoring (by-id name, None = all devices)
     #[serde(default)]
-    pub selected_hotkey_device: Option<String>,
+    pub hotkey_input_device: Option<String>,
 
-    /// Character cycle order (list of character names)
-    #[serde(default)]
-    pub cycle_group: Vec<String>,
+    /// Forward cycle hotkey binding (user must configure)
+    pub hotkey_cycle_forward: Option<crate::config::HotkeyBinding>,
+
+    /// Backward cycle hotkey binding (user must configure)
+    pub hotkey_cycle_backward: Option<crate::config::HotkeyBinding>,
 
     /// Include logged-out characters in hotkey cycle if they were previously logged in during this session
     #[serde(default)]
-    pub include_logged_out_in_cycle: bool,
+    pub hotkey_logged_out_cycle: bool,
 
     /// Require EVE window focused for hotkeys to work
     #[serde(default)]
     pub hotkey_require_eve_focus: bool,
 
-    /// Automatically save thumbnail positions when dragged
-    /// If disabled, positions can be manually saved via system tray menu
-    #[serde(default = "default_auto_save_thumbnail_positions")]
-    pub auto_save_thumbnail_positions: bool,
-
-    // Behavior settings (per-profile)
+    /// Character cycle order (list of character names)
     #[serde(default)]
-    pub minimize_clients_on_switch: bool,
-    #[serde(default)]
-    pub hide_when_no_focus: bool,
-    #[serde(default = "default_snap_threshold")]
-    pub snap_threshold: u16,
-    /// When a new character logs in without saved coordinates, inherit the previous character's thumbnail position
-    /// This keeps thumbnails in place when swapping characters on the same EVE client
-    #[serde(default = "default_preserve_thumbnail_position_on_swap")]
-    pub preserve_thumbnail_position_on_swap: bool,
-    /// Default thumbnail width for new characters
-    #[serde(default = "default_thumbnail_width")]
-    pub default_thumbnail_width: u16,
-    /// Default thumbnail height for new characters
-    #[serde(default = "default_thumbnail_height")]
-    pub default_thumbnail_height: u16,
+    pub hotkey_cycle_group: Vec<String>,
 
     // Per-profile character positions and dimensions
-    #[serde(rename = "characters", default)]
-    pub character_positions: HashMap<String, CharacterSettings>,
+    #[serde(default)]
+    pub character_thumbnails: HashMap<String, CharacterSettings>,
 }
 
 // Default value functions
@@ -175,31 +169,31 @@ fn default_auto_save_thumbnail_positions() -> bool {
 
 fn default_profiles() -> Vec<Profile> {
     vec![Profile {
-        name: crate::constants::defaults::behavior::PROFILE_NAME.to_string(),
-        description: crate::constants::defaults::behavior::PROFILE_DESCRIPTION.to_string(),
-        opacity_percent: crate::constants::defaults::thumbnail::OPACITY_PERCENT,
-        border_enabled: crate::constants::defaults::border::ENABLED,
-        border_size: crate::constants::defaults::border::SIZE,
-        border_color: crate::constants::defaults::border::COLOR.to_string(),
-        text_size: crate::constants::defaults::text::SIZE,
-        text_x: crate::constants::defaults::text::OFFSET_X,
-        text_y: crate::constants::defaults::text::OFFSET_Y,
-        text_color: crate::constants::defaults::text::COLOR.to_string(),
-        text_font_family: default_text_font_family(),
-        cycle_forward_keys: None, // User must configure
-        cycle_backward_keys: None, // User must configure
-        selected_hotkey_device: None, // Default: monitor all devices
-        cycle_group: Vec::new(),
-        include_logged_out_in_cycle: false, // Default: off
+        profile_name: crate::constants::defaults::behavior::PROFILE_NAME.to_string(),
+        profile_description: crate::constants::defaults::behavior::PROFILE_DESCRIPTION.to_string(),
+        thumbnail_default_width: default_thumbnail_width(),
+        thumbnail_default_height: default_thumbnail_height(),
+        thumbnail_opacity: crate::constants::defaults::thumbnail::OPACITY_PERCENT,
+        thumbnail_border: crate::constants::defaults::border::ENABLED,
+        thumbnail_border_size: crate::constants::defaults::border::SIZE,
+        thumbnail_border_color: crate::constants::defaults::border::COLOR.to_string(),
+        thumbnail_text_size: crate::constants::defaults::text::SIZE,
+        thumbnail_text_x: crate::constants::defaults::text::OFFSET_X,
+        thumbnail_text_y: crate::constants::defaults::text::OFFSET_Y,
+        thumbnail_text_font: default_text_font_family(),
+        thumbnail_text_color: crate::constants::defaults::text::COLOR.to_string(),
+        thumbnail_auto_save_position: default_auto_save_thumbnail_positions(),
+        thumbnail_snap_threshold: default_snap_threshold(),
+        thumbnail_hide_not_focused: crate::constants::defaults::behavior::HIDE_WHEN_NO_FOCUS,
+        thumbnail_preserve_position_on_swap: default_preserve_thumbnail_position_on_swap(),
+        client_minimize_on_switch: crate::constants::defaults::behavior::MINIMIZE_CLIENTS_ON_SWITCH,
+        hotkey_input_device: None, // Default: monitor all devices
+        hotkey_cycle_forward: None, // User must configure
+        hotkey_cycle_backward: None, // User must configure
+        hotkey_logged_out_cycle: false, // Default: off
         hotkey_require_eve_focus: crate::constants::defaults::behavior::HOTKEY_REQUIRE_EVE_FOCUS,
-        auto_save_thumbnail_positions: default_auto_save_thumbnail_positions(),
-        minimize_clients_on_switch: crate::constants::defaults::behavior::MINIMIZE_CLIENTS_ON_SWITCH,
-        hide_when_no_focus: crate::constants::defaults::behavior::HIDE_WHEN_NO_FOCUS,
-        snap_threshold: default_snap_threshold(),
-        preserve_thumbnail_position_on_swap: default_preserve_thumbnail_position_on_swap(),
-        default_thumbnail_width: default_thumbnail_width(),
-        default_thumbnail_height: default_thumbnail_height(),
-        character_positions: HashMap::new(),
+        hotkey_cycle_group: Vec::new(),
+        character_thumbnails: HashMap::new(),
     }]
 }
 
@@ -209,8 +203,6 @@ impl Default for GlobalSettings {
             selected_profile: default_profile_name(),
             window_width: default_window_width(),
             window_height: default_window_height(),
-            window_x: None,
-            window_y: None,
         }
     }
 }
@@ -219,8 +211,8 @@ impl Profile {
     /// Create a new profile with default values and the given name
     pub fn default_with_name(name: String, description: String) -> Self {
         let mut profile = default_profiles().into_iter().next().unwrap();
-        profile.name = name;
-        profile.description = description;
+        profile.profile_name = name;
+        profile.profile_description = description;
         profile
     }
 }
@@ -272,13 +264,13 @@ impl Config {
                         && let Ok(existing_config) = serde_json::from_str::<Config>(&contents) {
                             for profile_to_save in clone.profiles.iter_mut() {
                                 if let Some(existing_profile) = existing_config.profiles.iter()
-                                    .find(|p| p.name == profile_to_save.name)
+                                    .find(|p| p.profile_name == profile_to_save.profile_name)
                                 {
                                     // Profile exists on disk - preserve its character positions
-                                    profile_to_save.character_positions = existing_profile.character_positions.clone();
+                                    profile_to_save.character_thumbnails = existing_profile.character_thumbnails.clone();
                                 }
                                 // If profile doesn't exist on disk (new/duplicated profile),
-                                // keep the character_positions from the in-memory profile (from clone/duplication)
+                                // keep the character_thumbnails from the in-memory profile (from clone/duplication)
                             }
                         }
                 clone
@@ -322,11 +314,11 @@ mod tests {
             "A test profile".to_string(),
         );
         
-        assert_eq!(profile.name, "Test Profile");
-        assert_eq!(profile.description, "A test profile");
-        assert_eq!(profile.opacity_percent, crate::constants::defaults::thumbnail::OPACITY_PERCENT);
-        assert_eq!(profile.border_size, crate::constants::defaults::border::SIZE);
-        assert!(profile.character_positions.is_empty());
+        assert_eq!(profile.profile_name, "Test Profile");
+        assert_eq!(profile.profile_description, "A test profile");
+        assert_eq!(profile.thumbnail_opacity, crate::constants::defaults::thumbnail::OPACITY_PERCENT);
+        assert_eq!(profile.thumbnail_border_size, crate::constants::defaults::border::SIZE);
+        assert!(profile.character_thumbnails.is_empty());
     }
 
     #[test]
@@ -342,7 +334,7 @@ mod tests {
     #[test]
     fn test_profile_serialization() {
         let mut profile = Profile::default_with_name("Test".to_string(), String::new());
-        profile.character_positions.insert(
+        profile.character_thumbnails.insert(
             "TestChar".to_string(),
             CharacterSettings::new(100, 200, 480, 270),
         );
@@ -350,15 +342,15 @@ mod tests {
         let json = serde_json::to_string(&profile).unwrap();
         let deserialized: Profile = serde_json::from_str(&json).unwrap();
         
-        assert_eq!(deserialized.name, "Test");
-        assert_eq!(deserialized.character_positions.len(), 1);
-        assert!(deserialized.character_positions.contains_key("TestChar"));
+        assert_eq!(deserialized.profile_name, "Test");
+        assert_eq!(deserialized.character_thumbnails.len(), 1);
+        assert!(deserialized.character_thumbnails.contains_key("TestChar"));
     }
 
     #[test]
     fn test_config_serialization_roundtrip() {
         let mut config = Config::default();
-        config.profiles[0].character_positions.insert(
+        config.profiles[0].character_thumbnails.insert(
             "Character1".to_string(),
             CharacterSettings::new(50, 100, 640, 360),
         );
@@ -368,8 +360,8 @@ mod tests {
         
         assert_eq!(deserialized.profiles.len(), config.profiles.len());
         assert_eq!(
-            deserialized.profiles[0].character_positions.len(),
-            config.profiles[0].character_positions.len()
+            deserialized.profiles[0].character_thumbnails.len(),
+            config.profiles[0].character_thumbnails.len()
         );
     }
 
@@ -377,10 +369,9 @@ mod tests {
     fn test_global_settings_defaults() {
         let settings = GlobalSettings::default();
         
+        assert_eq!(settings.selected_profile, "default");
         assert_eq!(settings.window_width, crate::constants::defaults::manager::WINDOW_WIDTH);
         assert_eq!(settings.window_height, crate::constants::defaults::manager::WINDOW_HEIGHT);
-        assert!(settings.window_x.is_none());
-        assert!(settings.window_y.is_none());
     }
 
     #[test]
@@ -388,19 +379,19 @@ mod tests {
         let profile = Profile::default_with_name("Test".to_string(), String::new());
         
         // Test migrated behavior settings are properly defaulted
-        assert_eq!(profile.snap_threshold, crate::constants::defaults::behavior::SNAP_THRESHOLD);
+        assert_eq!(profile.thumbnail_snap_threshold, crate::constants::defaults::behavior::SNAP_THRESHOLD);
         assert_eq!(
-            profile.preserve_thumbnail_position_on_swap,
+            profile.thumbnail_preserve_position_on_swap,
             crate::constants::defaults::behavior::PRESERVE_POSITION_ON_SWAP
         );
-        assert_eq!(profile.default_thumbnail_width, crate::constants::defaults::thumbnail::WIDTH);
-        assert_eq!(profile.default_thumbnail_height, crate::constants::defaults::thumbnail::HEIGHT);
-        assert_eq!(profile.minimize_clients_on_switch, crate::constants::defaults::behavior::MINIMIZE_CLIENTS_ON_SWITCH);
-        assert_eq!(profile.hide_when_no_focus, crate::constants::defaults::behavior::HIDE_WHEN_NO_FOCUS);
+        assert_eq!(profile.thumbnail_default_width, crate::constants::defaults::thumbnail::WIDTH);
+        assert_eq!(profile.thumbnail_default_height, crate::constants::defaults::thumbnail::HEIGHT);
+        assert_eq!(profile.client_minimize_on_switch, crate::constants::defaults::behavior::MINIMIZE_CLIENTS_ON_SWITCH);
+        assert_eq!(profile.thumbnail_hide_not_focused, crate::constants::defaults::behavior::HIDE_WHEN_NO_FOCUS);
     }
 
     #[test]
-    fn test_save_strategy_preserve_character_positions() {
+    fn test_save_strategy_preserve_character_thumbnails() {
         // This tests the strategy concept - actual file I/O is integration test territory
         let strategy = SaveStrategy::PreserveCharacterPositions;
         assert_eq!(strategy, SaveStrategy::PreserveCharacterPositions);
@@ -410,29 +401,29 @@ mod tests {
     #[test]
     fn test_profile_with_hotkeys() {
         let mut profile = Profile::default_with_name("Hotkey Test".to_string(), String::new());
-        profile.cycle_forward_keys = Some(crate::config::HotkeyBinding::new(15, false, false, false, false));
-        profile.cycle_backward_keys = Some(crate::config::HotkeyBinding::new(15, false, true, false, false));
+        profile.hotkey_cycle_forward = Some(crate::config::HotkeyBinding::new(15, false, false, false, false));
+        profile.hotkey_cycle_backward = Some(crate::config::HotkeyBinding::new(15, false, true, false, false));
         
-        assert!(profile.cycle_forward_keys.is_some());
-        assert!(profile.cycle_backward_keys.is_some());
+        assert!(profile.hotkey_cycle_forward.is_some());
+        assert!(profile.hotkey_cycle_backward.is_some());
         
         let json = serde_json::to_string(&profile).unwrap();
         let deserialized: Profile = serde_json::from_str(&json).unwrap();
         
-        assert_eq!(deserialized.cycle_forward_keys, profile.cycle_forward_keys);
-        assert_eq!(deserialized.cycle_backward_keys, profile.cycle_backward_keys);
+        assert_eq!(deserialized.hotkey_cycle_forward, profile.hotkey_cycle_forward);
+        assert_eq!(deserialized.hotkey_cycle_backward, profile.hotkey_cycle_backward);
     }
 
     #[test]
     fn test_profile_cycle_group() {
         let mut profile = Profile::default_with_name("Cycle Test".to_string(), String::new());
-        profile.cycle_group = vec![
+        profile.hotkey_cycle_group = vec![
             "Character1".to_string(),
             "Character2".to_string(),
             "Character3".to_string(),
         ];
         
-        assert_eq!(profile.cycle_group.len(), 3);
-        assert_eq!(profile.cycle_group[0], "Character1");
+        assert_eq!(profile.hotkey_cycle_group.len(), 3);
+        assert_eq!(profile.hotkey_cycle_group[0], "Character1");
     }
 }

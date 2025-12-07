@@ -155,10 +155,10 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
         // Forward key binding
         ui.horizontal(|ui| {
             ui.label("Forward cycle:");
-            let binding_text = profile.cycle_forward_keys.as_ref()
+            let binding_text = profile.hotkey_cycle_forward.as_ref()
                 .map(|b| b.display_name())
                 .unwrap_or_else(|| "Not set".to_string());
-            let color = if profile.cycle_forward_keys.is_none() {
+            let color = if profile.hotkey_cycle_forward.is_none() {
                 egui::Color32::from_rgb(200, 100, 100)
             } else {
                 ui.style().visuals.text_color()
@@ -174,10 +174,10 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
         // Backward key binding
         ui.horizontal(|ui| {
             ui.label("Backward cycle:");
-            let binding_text = profile.cycle_backward_keys.as_ref()
+            let binding_text = profile.hotkey_cycle_backward.as_ref()
                 .map(|b| b.display_name())
                 .unwrap_or_else(|| "Not set".to_string());
-            let color = if profile.cycle_backward_keys.is_none() {
+            let color = if profile.hotkey_cycle_backward.is_none() {
                 egui::Color32::from_rgb(200, 100, 100)
             } else {
                 ui.style().visuals.text_color()
@@ -194,7 +194,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
         ui.label("Input device to monitor:");
         ui.add_space(ITEM_SPACING / 2.0);
 
-        let selected_display = if let Some(ref device_id) = profile.selected_hotkey_device {
+        let selected_display = if let Some(ref device_id) = profile.hotkey_input_device {
             state.available_devices.iter()
                 .find(|(id, _)| id == device_id)
                 .map(|(_, name)| name.clone())
@@ -206,7 +206,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
         egui::ComboBox::from_id_salt("hotkey_device_selector")
             .selected_text(&selected_display)
             .show_ui(ui, |ui| {
-                if ui.selectable_value(&mut profile.selected_hotkey_device, None, "All Devices").clicked() {
+                if ui.selectable_value(&mut profile.hotkey_input_device, None, "All Devices").clicked() {
                     changed = true;
                 }
 
@@ -215,7 +215,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
                 for (device_id, friendly_name) in &state.available_devices {
                     let device_clone = device_id.clone();
                     if ui.selectable_value(
-                        &mut profile.selected_hotkey_device,
+                        &mut profile.hotkey_input_device,
                         Some(device_clone),
                         friendly_name
                     ).clicked() {
@@ -235,7 +235,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
 
         // Logged-out cycling checkbox
         if ui.checkbox(
-            &mut profile.include_logged_out_in_cycle,
+            &mut profile.hotkey_logged_out_cycle,
             "Include logged-out characters in cycle"
         ).changed() {
             changed = true;
@@ -252,7 +252,7 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
 
         // Auto-save thumbnail positions checkbox
         if ui.checkbox(
-            &mut profile.auto_save_thumbnail_positions,
+            &mut profile.thumbnail_auto_save_position,
             "Automatically save thumbnail positions"
         ).changed() {
             changed = true;
@@ -336,11 +336,11 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
                             if should_accept {
                                 match target {
                                     Some(CaptureTarget::Forward) => {
-                                        profile.cycle_forward_keys = Some(binding_clone);
+                                        profile.hotkey_cycle_forward = Some(binding_clone);
                                         changed = true;
                                     }
                                     Some(CaptureTarget::Backward) => {
-                                        profile.cycle_backward_keys = Some(binding_clone);
+                                        profile.hotkey_cycle_backward = Some(binding_clone);
                                         changed = true;
                                     }
                                     None => {}

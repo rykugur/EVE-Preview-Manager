@@ -48,13 +48,13 @@ impl ProfileSelector {
                 let display_profile = &config.profiles[display_idx];
 
                 egui::ComboBox::from_id_salt("profile_selector")
-                    .selected_text(&display_profile.name)
+                    .selected_text(&display_profile.profile_name)
                     .show_ui(ui, |ui| {
                         for (idx, profile) in config.profiles.iter().enumerate() {
-                            let label = if profile.description.is_empty() {
-                                profile.name.clone()
+                            let label = if profile.profile_description.is_empty() {
+                                profile.profile_name.clone()
                             } else {
-                                format!("{} - {}", profile.name, profile.description)
+                                format!("{} - {}", profile.profile_name, profile.profile_description)
                             };
 
                             if ui.selectable_value(&mut display_idx, idx, label).clicked() {
@@ -70,7 +70,7 @@ impl ProfileSelector {
                 if ui.add_enabled(has_pending_change, egui::Button::new("⬇ Load")).clicked()
                     && let Some(new_idx) = self.pending_profile_idx {
                         *selected_idx = new_idx;
-                        config.global.selected_profile = config.profiles[new_idx].name.clone();
+                        config.global.selected_profile = config.profiles[new_idx].profile_name.clone();
                         self.pending_profile_idx = None;
                         action = ProfileAction::SwitchProfile;
                     }
@@ -97,15 +97,15 @@ impl ProfileSelector {
             if ui.button("📋 Duplicate").clicked() {
                 self.show_duplicate_dialog = true;
                 let current = &config.profiles[selected_idx];
-                self.edit_profile_name = format!("{} (copy)", current.name);
-                self.edit_profile_desc = current.description.clone();
+                self.edit_profile_name = format!("{} (copy)", current.profile_name);
+                self.edit_profile_desc = current.profile_description.clone();
             }
 
             if ui.button("✏ Edit").clicked() {
                 self.show_edit_dialog = true;
                 let current = &config.profiles[selected_idx];
-                self.edit_profile_name = current.name.clone();
-                self.edit_profile_desc = current.description.clone();
+                self.edit_profile_name = current.profile_name.clone();
+                self.edit_profile_desc = current.profile_description.clone();
             }
             
             if ui.button("🗑 Delete").clicked() && config.profiles.len() > 1 {
@@ -216,8 +216,8 @@ impl ProfileSelector {
                     if ui.button("Duplicate").clicked()
                         && !self.edit_profile_name.is_empty() {
                             let mut new_profile = config.profiles[source_idx].clone();
-                            new_profile.name = self.edit_profile_name.clone();
-                            new_profile.description = self.edit_profile_desc.clone();
+                            new_profile.profile_name = self.edit_profile_name.clone();
+                            new_profile.profile_description = self.edit_profile_desc.clone();
                             config.profiles.push(new_profile);
                             action = ProfileAction::ProfileCreated;
                             self.show_duplicate_dialog = false;
@@ -256,9 +256,9 @@ impl ProfileSelector {
                     if ui.button("Save").clicked()
                         && !self.edit_profile_name.is_empty() {
                             let profile = &mut config.profiles[selected_idx];
-                            profile.name = self.edit_profile_name.clone();
-                            profile.description = self.edit_profile_desc.clone();
-                            config.global.selected_profile = profile.name.clone();
+                            profile.profile_name = self.edit_profile_name.clone();
+                            profile.profile_description = self.edit_profile_desc.clone();
+                            config.global.selected_profile = profile.profile_name.clone();
                             action = ProfileAction::ProfileUpdated;
                             self.show_edit_dialog = false;
                         }
@@ -286,7 +286,7 @@ impl ProfileSelector {
             .show(ctx, |ui| {
                 ui.label(format!(
                     "Delete profile '{}'?",
-                    config.profiles[*selected_idx].name
+                    config.profiles[*selected_idx].profile_name
                 ));
                 ui.colored_label(
                     egui::Color32::from_rgb(200, 0, 0),
@@ -301,7 +301,7 @@ impl ProfileSelector {
                         if *selected_idx >= config.profiles.len() {
                             *selected_idx = config.profiles.len() - 1;
                         }
-                        config.global.selected_profile = config.profiles[*selected_idx].name.clone();
+                        config.global.selected_profile = config.profiles[*selected_idx].profile_name.clone();
                         action = ProfileAction::ProfileDeleted;
                         self.show_delete_confirm = false;
                     }
