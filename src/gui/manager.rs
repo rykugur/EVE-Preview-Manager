@@ -453,7 +453,7 @@ impl ManagerApp {
         self.settings_changed = false;
         self.config_status_message = Some(StatusMessage {
             text: "Changes discarded".to_string(),
-            color: egui::Color32::from_rgb(100, 200, 100),
+            color: egui::Color32::from_rgb(200, 100, 100),
         });
         info!("Configuration changes discarded");
     }
@@ -585,7 +585,7 @@ impl ManagerApp {
             // Save/Discard buttons aligned to the right
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 // Discard button
-                if ui.button("↶ Discard Changes").clicked() {
+                if ui.button("⮌ Discard Changes").clicked() {
                     self.discard_changes();
                 }
 
@@ -623,7 +623,7 @@ impl ManagerApp {
                 } else if self.settings_changed {
                     ui.colored_label(
                         egui::Color32::from_rgb(255, 200, 0),
-                        "● Unsaved changes"
+                        "Unsaved changes"
                     );
                 }
             });
