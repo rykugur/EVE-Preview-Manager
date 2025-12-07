@@ -19,7 +19,6 @@ impl EveWindowType {
             EveWindowType::LoggedOut => "",
         }
     }
-    
 }
 
 /// A position in 2D space (X11 coordinates)
@@ -122,7 +121,6 @@ impl TextOffset {
     pub fn from_border_edge(x: i16, y: i16) -> Self {
         Self { x, y }
     }
-
 }
 
 /// Thumbnail lifecycle state
@@ -183,7 +181,6 @@ impl CharacterSettings {
     pub fn position(&self) -> Position {
         Position::new(self.x, self.y)
     }
-    
 }
 
 #[cfg(test)]

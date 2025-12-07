@@ -169,4 +169,3 @@ mod tests {
         assert_eq!(to_fixed(1080.0), 1080 * 65536);
     }
 }
-

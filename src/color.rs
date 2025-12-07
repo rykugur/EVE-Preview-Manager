@@ -59,7 +59,6 @@ impl HexColor {
             alpha: scale(a),
         }
     }
-
 }
 
 /// Opacity as percentage (0-100)
