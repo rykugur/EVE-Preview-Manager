@@ -127,20 +127,28 @@ pub fn start_capture() -> Result<(Receiver<CaptureState>, Receiver<CaptureResult
 
 /// Blocking key capture that sends state updates via channel
 fn capture_key_blocking(state_tx: Sender<CaptureState>) -> Result<CaptureResult> {
-    // Find all input devices (keyboards and mice)
-    let mut devices = device_detection::find_all_input_devices()
+    // Find all input devices (keyboards and mice) with their paths
+    let devices_with_paths = device_detection::find_all_input_devices_with_paths()
         .context("Failed to find input devices for key capture")?;
 
-    // Set all devices to non-blocking mode so we can poll them all
-    for device in &mut devices {
-        device.set_nonblocking(true)
-            .context("Failed to set device to non-blocking mode")?;
-    }
+    // Convert to mutable devices and track their device IDs
+    let mut devices_and_ids: Vec<_> = devices_with_paths
+        .into_iter()
+        .map(|(device, path)| {
+            let dev = device;
+            dev.set_nonblocking(true).ok();
+            let device_id = device_detection::extract_device_id(&path);
+            (dev, device_id)
+        })
+        .collect();
 
-    info!(count = devices.len(), "Starting key capture on all input devices (non-blocking mode)");
+    info!(count = devices_and_ids.len(), "Starting key capture on all input devices (non-blocking mode)");
 
     let mut state = CaptureState::new();
     let _ = state_tx.send(state.clone());
+
+    // Track which devices have contributed to the current key combo
+    let mut contributing_devices: std::collections::HashSet<String> = std::collections::HashSet::new();
 
     let timeout = Duration::from_secs(30);
     let start = std::time::Instant::now();
@@ -153,7 +161,7 @@ fn capture_key_blocking(state_tx: Sender<CaptureState>) -> Result<CaptureResult>
         }
 
         // Poll all devices for events
-        for device in &mut devices {
+        for (device, device_id) in &mut devices_and_ids {
             // Try to fetch events with timeout
             match device.fetch_events() {
                 Ok(events) => {
@@ -168,7 +176,7 @@ fn capture_key_blocking(state_tx: Sender<CaptureState>) -> Result<CaptureResult>
                         let is_press = event_value == input::KEY_PRESS;
                         let is_release = event_value == input::KEY_RELEASE;
 
-                        debug!(key_code = key_code, value = event_value, "Key event during capture");
+                        debug!(key_code = key_code, value = event_value, device_id = %device_id, "Key event during capture");
 
                         // Update modifier state first
                         // For modifiers: set true on press/repeat, false on release
@@ -176,21 +184,33 @@ fn capture_key_blocking(state_tx: Sender<CaptureState>) -> Result<CaptureResult>
                             29 | 97 => {
                                 // Left Ctrl (29) or Right Ctrl (97)
                                 state.ctrl = !is_release;
+                                if !is_release {
+                                    contributing_devices.insert(device_id.clone());
+                                }
                                 true
                             }
                             42 | 54 => {
                                 // Left Shift (42) or Right Shift (54)
                                 state.shift = !is_release;
+                                if !is_release {
+                                    contributing_devices.insert(device_id.clone());
+                                }
                                 true
                             }
                             56 | 100 => {
                                 // Left Alt (56) or Right Alt (100)
                                 state.alt = !is_release;
+                                if !is_release {
+                                    contributing_devices.insert(device_id.clone());
+                                }
                                 true
                             }
                             125 | 126 => {
                                 // Left Super (125) or Right Super (126)
                                 state.super_key = !is_release;
+                                if !is_release {
+                                    contributing_devices.insert(device_id.clone());
+                                }
                                 true
                             }
                             _ => false,
@@ -211,17 +231,25 @@ fn capture_key_blocking(state_tx: Sender<CaptureState>) -> Result<CaptureResult>
                                 continue;
                             }
 
+                            // Add this device to contributors (main key source)
+                            contributing_devices.insert(device_id.clone());
+
                             // Otherwise, capture the key
                             state.key_code = Some(key_code);
                             state.update_description();
                             let _ = state_tx.send(state.clone());
 
-                            let binding = HotkeyBinding::new(
+                            // Convert HashSet to sorted Vec for consistent ordering
+                            let mut source_devices: Vec<String> = contributing_devices.iter().cloned().collect();
+                            source_devices.sort();
+
+                            let binding = HotkeyBinding::with_devices(
                                 key_code,
                                 state.ctrl,
                                 state.shift,
                                 state.alt,
                                 state.super_key,
+                                source_devices,
                             );
 
                             info!(binding = ?binding, "Key captured successfully");

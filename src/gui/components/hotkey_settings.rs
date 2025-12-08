@@ -139,12 +139,14 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
 
         let selected_display = match profile.hotkey_input_device.as_deref() {
             None => "---".to_string(),
+            Some("auto") => "Auto-Detect (Recommended)".to_string(),
             Some("all") => "All Devices".to_string(),
             Some(device_id) => {
+                // This shouldn't happen with new system, but handle legacy configs
                 state.available_devices.iter()
                     .find(|(id, _)| id == device_id)
                     .map(|(_, name)| name.clone())
-                    .unwrap_or_else(|| device_id.to_string())
+                    .unwrap_or_else(|| "Auto-Detect (Recommended)".to_string())
             }
         };
 
@@ -155,21 +157,12 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
                     changed = true;
                 }
 
-                if ui.selectable_value(&mut profile.hotkey_input_device, Some("all".to_string()), "All Devices").clicked() {
+                if ui.selectable_value(&mut profile.hotkey_input_device, Some("auto".to_string()), "Auto-Detect (Recommended)").clicked() {
                     changed = true;
                 }
 
-                ui.separator();
-
-                for (device_id, friendly_name) in &state.available_devices {
-                    let device_clone = device_id.clone();
-                    if ui.selectable_value(
-                        &mut profile.hotkey_input_device,
-                        Some(device_clone),
-                        friendly_name
-                    ).clicked() {
-                        changed = true;
-                    }
+                if ui.selectable_value(&mut profile.hotkey_input_device, Some("all".to_string()), "All Devices").clicked() {
+                    changed = true;
                 }
             });
 
@@ -178,12 +171,36 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
             ui.label(egui::RichText::new(format!("⚠ {}", error)).small().color(egui::Color32::from_rgb(200, 100, 0)));
         }
 
+        // Check if device is selected - needed for helper text
+        let device_selected = profile.hotkey_input_device.is_some();
+
+        // Show helper text for auto-detect mode
+        if profile.hotkey_input_device.as_deref() == Some("auto") {
+            ui.add_space(ITEM_SPACING / 4.0);
+            ui.label(egui::RichText::new("Devices will be automatically detected when you bind keys")
+                .small()
+                .weak());
+        }
+
+        // Show helper text for all devices mode
+        if profile.hotkey_input_device.as_deref() == Some("all") {
+            ui.add_space(ITEM_SPACING / 4.0);
+            ui.label(egui::RichText::new("Hotkeys will work from any connected input device")
+                .small()
+                .weak());
+        }
+
+        // Show message when device not selected
+        if !device_selected {
+            ui.add_space(ITEM_SPACING / 4.0);
+            ui.label(egui::RichText::new("Select an input device above to configure hotkeys")
+                .small()
+                .weak());
+        }
+
         ui.add_space(ITEM_SPACING);
         ui.separator();
         ui.add_space(ITEM_SPACING);
-
-        // Check if device is selected - disable rest of settings if not
-        let device_selected = profile.hotkey_input_device.is_some();
 
         ui.add_enabled_ui(device_selected, |ui| {
             // Hotkey Bindings
@@ -258,14 +275,6 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
                 .small()
                 .weak());
         });
-
-        // Show message when device not selected
-        if !device_selected {
-            ui.add_space(ITEM_SPACING);
-            ui.label(egui::RichText::new("Select an input device above to configure hotkeys")
-                .italics()
-                .weak());
-        }
     });
 
     // Key Capture Dialog
@@ -273,9 +282,9 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
         egui::Window::new("🎹 Capture Hotkey")
             .collapsible(false)
             .resizable(false)
+            .fixed_size([370.0, 280.0])
             .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
             .show(ui.ctx(), |ui| {
-                ui.set_min_width(350.0);
 
                 let target_name = match state.capture_target {
                     Some(CaptureTarget::Forward) => "Forward Cycle",
@@ -300,6 +309,47 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
                     });
                 } else {
                     ui.label("Initializing capture...");
+                }
+
+                ui.add_space(ITEM_SPACING);
+
+                // Reserve space for device list (shown after capture)
+                // This prevents the modal from shifting when devices are displayed
+                if let Some(ref result) = state.capture_result {
+                    if let CaptureResult::Captured(binding) = result {
+                        if !binding.source_devices.is_empty() {
+                            ui.spacing_mut().item_spacing.y = 2.0;
+                            ui.label(egui::RichText::new("Detected on:").weak().small());
+                            for device_id in &binding.source_devices {
+                                // Format device ID to be more readable
+                                let friendly_device = device_id
+                                    .replace("-event-kbd", " (Keyboard)")
+                                    .replace("-event-mouse", " (Mouse)")
+                                    .replace("_", " ")
+                                    .replace("-", " ");
+                                ui.label(egui::RichText::new(format!("  • {}", friendly_device)).weak().small());
+                            }
+                            ui.spacing_mut().item_spacing.y = 4.0;
+                        } else {
+                            ui.spacing_mut().item_spacing.y = 2.0;
+                            ui.label("");
+                            ui.label("");
+                            ui.label("");
+                            ui.spacing_mut().item_spacing.y = 4.0;
+                        }
+                    } else {
+                        ui.spacing_mut().item_spacing.y = 2.0;
+                        ui.label("");
+                        ui.label("");
+                        ui.label("");
+                        ui.spacing_mut().item_spacing.y = 4.0;
+                    }
+                } else {
+                    ui.spacing_mut().item_spacing.y = 2.0;
+                    ui.label("");
+                    ui.label("");
+                    ui.label("");
+                    ui.spacing_mut().item_spacing.y = 4.0;
                 }
 
                 ui.add_space(ITEM_SPACING);

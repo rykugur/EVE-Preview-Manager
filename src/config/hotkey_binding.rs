@@ -3,11 +3,10 @@
 use evdev::KeyCode;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use serde::de::{self, Visitor};
-use std::fmt;
 use std::str::FromStr;
 
 /// A keyboard hotkey binding with modifiers
-/// Serializes to/from array format: ["KEY_LEFTSHIFT", "KEY_TAB"]
+/// Serializes to/from object format: {"keys": [...], "source_devices": [...]}
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HotkeyBinding {
     /// evdev key code (e.g., KEY_TAB = 15, KEY_F1 = 59)
@@ -24,6 +23,10 @@ pub struct HotkeyBinding {
 
     /// Super/Windows key pressed
     pub super_key: bool,
+
+    /// Input devices that contributed to this binding (e.g., keyboard, mouse)
+    /// Used for auto-detection of which devices to listen to at runtime
+    pub source_devices: Vec<String>,
 }
 
 impl HotkeyBinding {
@@ -35,6 +38,26 @@ impl HotkeyBinding {
             shift,
             alt,
             super_key,
+            source_devices: Vec::new(),
+        }
+    }
+
+    /// Create a new hotkey binding with source devices
+    pub fn with_devices(
+        key_code: u16,
+        ctrl: bool,
+        shift: bool,
+        alt: bool,
+        super_key: bool,
+        source_devices: Vec<String>,
+    ) -> Self {
+        Self {
+            key_code,
+            ctrl,
+            shift,
+            alt,
+            super_key,
+            source_devices,
         }
     }
 
@@ -152,45 +175,50 @@ impl Default for HotkeyBinding {
     }
 }
 
-// Custom serialization to array format
+// Custom serialization to object format with keys and source_devices
 impl Serialize for HotkeyBinding {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
     {
-        self.to_key_array().serialize(serializer)
+        use serde::ser::SerializeStruct;
+        let mut state = serializer.serialize_struct("HotkeyBinding", 2)?;
+        state.serialize_field("keys", &self.to_key_array())?;
+        state.serialize_field("source_devices", &self.source_devices)?;
+        state.end()
     }
 }
 
-// Custom deserialization from array format
+// Custom deserialization from object format (with backward compatibility for array format)
 impl<'de> Deserialize<'de> for HotkeyBinding {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
-        struct HotkeyBindingVisitor;
-
-        impl<'de> Visitor<'de> for HotkeyBindingVisitor {
-            type Value = HotkeyBinding;
-
-            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-                formatter.write_str("an array of KEY_* strings like [\"KEY_LEFTSHIFT\", \"KEY_TAB\"]")
-            }
-
-            fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
-            where
-                A: de::SeqAccess<'de>,
-            {
-                let mut keys = Vec::new();
-                while let Some(key) = seq.next_element::<String>()? {
-                    keys.push(key);
-                }
-
-                HotkeyBinding::from_key_array(&keys).map_err(de::Error::custom)
-            }
+        #[derive(Deserialize)]
+        #[serde(untagged)]
+        enum HotkeyFormat {
+            Object {
+                keys: Vec<String>,
+                #[serde(default)]
+                source_devices: Vec<String>,
+            },
+            Array(Vec<String>),
         }
 
-        deserializer.deserialize_seq(HotkeyBindingVisitor)
+        match HotkeyFormat::deserialize(deserializer)? {
+            HotkeyFormat::Object { keys, source_devices } => {
+                let mut binding = HotkeyBinding::from_key_array(&keys)
+                    .map_err(de::Error::custom)?;
+                binding.source_devices = source_devices;
+                Ok(binding)
+            }
+            HotkeyFormat::Array(keys) => {
+                // Legacy format - no source devices
+                HotkeyBinding::from_key_array(&keys)
+                    .map_err(de::Error::custom)
+            }
+        }
     }
 }
 

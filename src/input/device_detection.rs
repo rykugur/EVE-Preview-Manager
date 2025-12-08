@@ -110,3 +110,40 @@ fn classify_input_device(device: &Device) -> Option<&'static str> {
         None
     }
 }
+
+/// Extract device ID from a /dev/input/eventX path by resolving through /dev/input/by-id
+/// Returns a human-readable device ID (e.g., "usb-Logitech_G502-event-kbd")
+pub fn extract_device_id(event_path: &PathBuf) -> String {
+    let by_id_path = "/dev/input/by-id";
+    
+    // Try to find this device in /dev/input/by-id/
+    if let Ok(entries) = std::fs::read_dir(by_id_path) {
+        for entry in entries.flatten() {
+            if let Ok(target) = std::fs::read_link(entry.path()) {
+                let resolved = if target.is_absolute() {
+                    target
+                } else {
+                    std::path::Path::new(by_id_path).join(&target)
+                };
+                
+                // Canonicalize both paths for comparison
+                if let (Ok(resolved_canonical), Ok(event_canonical)) = 
+                    (resolved.canonicalize(), event_path.canonicalize()) {
+                    if resolved_canonical == event_canonical {
+                        // Found the matching by-id symlink
+                        if let Some(name) = entry.file_name().to_str() {
+                            return name.to_string();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    
+    // Fallback to event path filename if no by-id link found
+    event_path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or("unknown")
+        .to_string()
+}

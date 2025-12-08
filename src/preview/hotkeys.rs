@@ -6,7 +6,7 @@
 
 use anyhow::{Context, Result};
 use evdev::{Device, EventType, KeyCode};
-use std::sync::mpsc::Sender;
+use std::sync::{mpsc::Sender, Arc};
 use std::thread;
 use tracing::{debug, error, info, warn};
 
@@ -27,6 +27,12 @@ pub fn spawn_listener(
     backward_key: HotkeyBinding,
     selected_device_id: Option<String>,
 ) -> Result<Vec<thread::JoinHandle<()>>> {
+    // Get all device paths for cross-device modifier state queries
+    let all_device_paths: Vec<_> = device_detection::find_all_input_devices_with_paths()?
+        .into_iter()
+        .map(|(_dev, path)| path)
+        .collect();
+    
     let mut devices = device_detection::find_all_input_devices_with_paths()?;
 
     // Handle device selection
@@ -40,9 +46,35 @@ pub fn spawn_listener(
             // Listen on all devices - no filtering needed
             info!("Listening on all input devices");
         }
+        Some("auto") => {
+            // Auto-detect mode: use devices from the hotkey bindings
+            info!("Auto-detect mode: using devices from hotkey bindings");
+
+            // Collect all unique device IDs from both bindings
+            let mut required_devices = std::collections::HashSet::new();
+            required_devices.extend(forward_key.source_devices.iter().cloned());
+            required_devices.extend(backward_key.source_devices.iter().cloned());
+
+            if required_devices.is_empty() {
+                warn!("Auto-detect mode but no source devices found in bindings, listening on all devices");
+            } else {
+                // Filter to only the required devices
+                info!(devices = ?required_devices, "Filtering to auto-detected devices");
+                
+                devices.retain(|(_, device_path)| {
+                    let device_id = device_detection::extract_device_id(device_path);
+                    required_devices.contains(&device_id)
+                });
+
+                if devices.is_empty() {
+                    warn!("None of the auto-detected devices found, falling back to all devices");
+                    devices = device_detection::find_all_input_devices_with_paths()?;
+                }
+            }
+        }
         Some(device_id) => {
-            // Filter to specific device
-            info!(device_id = %device_id, "Filtering to specific input device");
+            // Legacy: specific device ID (from old configs)
+            info!(device_id = %device_id, "Filtering to specific input device (legacy)");
 
             let by_id_path = format!("/dev/input/by-id/{}", device_id);
             let target_path = std::fs::read_link(&by_id_path)
@@ -73,6 +105,9 @@ pub fn spawn_listener(
 
     let mut handles = Vec::new();
 
+    // Share all device paths so each listener can query modifier state from all devices
+    let all_device_paths = Arc::new(all_device_paths);
+
     info!(
         forward = %forward_key.display_name(),
         backward = %backward_key.display_name(),
@@ -84,10 +119,11 @@ pub fn spawn_listener(
         let sender = sender.clone();
         let forward_key = forward_key.clone();
         let backward_key = backward_key.clone();
+        let all_device_paths = Arc::clone(&all_device_paths);
 
         let handle = thread::spawn(move || {
             info!(device = ?device.name(), path = %device_path.display(), "Hotkey listener started");
-            if let Err(e) = listen_for_hotkeys(device, sender, forward_key, backward_key) {
+            if let Err(e) = listen_for_hotkeys(device, sender, forward_key, backward_key, all_device_paths) {
                 error!(error = %e, "Hotkey listener error");
             }
         });
@@ -103,6 +139,7 @@ fn listen_for_hotkeys(
     sender: Sender<CycleCommand>,
     forward_key: HotkeyBinding,
     backward_key: HotkeyBinding,
+    all_device_paths: Arc<Vec<std::path::PathBuf>>,
 ) -> Result<()> {
     loop {
         let events = device.fetch_events()
@@ -110,6 +147,7 @@ fn listen_for_hotkeys(
 
         let mut potential_hotkey_presses = Vec::new();
 
+        // Collect potential hotkey presses (non-modifier keys)
         for event in events {
             if event.event_type() != EventType::KEY {
                 continue;
@@ -120,20 +158,32 @@ fn listen_for_hotkeys(
 
             debug!(key_code = key_code, value = event.value(), "Key event");
 
+            // Collect non-modifier key presses that might be hotkeys
             if pressed && (key_code == forward_key.key_code || key_code == backward_key.key_code) {
                 potential_hotkey_presses.push(key_code);
             }
         }
 
+        // For each potential hotkey, query current modifier state from ALL devices
         for key_code in potential_hotkey_presses {
-            let key_state = device.get_key_state()
-                .context("Failed to get keyboard state")?;
+            // Query modifier state across all devices to handle cross-device hotkeys
+            // (e.g., Shift held on keyboard + Mouse Button pressed on mouse)
+            let mut ctrl_pressed = false;
+            let mut shift_pressed = false;
+            let mut alt_pressed = false;
+            let mut super_pressed = false;
 
-            let ctrl_pressed = key_state.contains(KeyCode(29)) || key_state.contains(KeyCode(97));
-            let shift_pressed = key_state.contains(KeyCode(input::KEY_LEFTSHIFT))
-                || key_state.contains(KeyCode(input::KEY_RIGHTSHIFT));
-            let alt_pressed = key_state.contains(KeyCode(56)) || key_state.contains(KeyCode(100));
-            let super_pressed = key_state.contains(KeyCode(125)) || key_state.contains(KeyCode(126));
+            for device_path in all_device_paths.iter() {
+                if let Ok(dev) = Device::open(device_path) {
+                    if let Ok(key_state) = dev.get_key_state() {
+                        ctrl_pressed |= key_state.contains(KeyCode(29)) || key_state.contains(KeyCode(97));
+                        shift_pressed |= key_state.contains(KeyCode(input::KEY_LEFTSHIFT))
+                            || key_state.contains(KeyCode(input::KEY_RIGHTSHIFT));
+                        alt_pressed |= key_state.contains(KeyCode(56)) || key_state.contains(KeyCode(100));
+                        super_pressed |= key_state.contains(KeyCode(125)) || key_state.contains(KeyCode(126));
+                    }
+                }
+            }
 
             if forward_key.matches(key_code, ctrl_pressed, shift_pressed, alt_pressed, super_pressed) {
                 info!(
