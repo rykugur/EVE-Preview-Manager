@@ -59,6 +59,7 @@ impl CycleOrderSettingsState {
                     line.to_string()
                 }
             })
+            .filter(|s| !s.is_empty())  // Filter again after extracting name (handles " [HOTKEY]" case)
             .collect();
 
         // Note: Hotkey bindings are updated through the Bind button, not text parsing
@@ -89,7 +90,7 @@ pub fn ui(
     changed
 }
 
-/// Renders the unified cycle group tab with integrated per-character hotkeys
+/// Renders the cycle group editor with integrated per-character hotkey bindings
 fn render_unified_cycle_group_tab(
     ui: &mut egui::Ui,
     profile: &mut Profile,

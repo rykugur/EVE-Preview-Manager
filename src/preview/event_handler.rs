@@ -69,13 +69,16 @@ fn handle_create_notify<'a>(
             .context("Failed to get geometry reply for new thumbnail")?;
         
         // ALWAYS update character_thumbnails in memory (for manual saves)
-        let settings = crate::types::CharacterSettings::new(
-            geom.x,
-            geom.y,
-            thumbnail.dimensions.width,
-            thumbnail.dimensions.height,
-        );
-        daemon_config.character_thumbnails.insert(thumbnail.character_name.clone(), settings);
+        // Skip logged-out clients with empty character name
+        if !thumbnail.character_name.is_empty() {
+            let settings = crate::types::CharacterSettings::new(
+                geom.x,
+                geom.y,
+                thumbnail.dimensions.width,
+                thumbnail.dimensions.height,
+            );
+            daemon_config.character_thumbnails.insert(thumbnail.character_name.clone(), settings);
+        }
         
         // Conditionally persist to disk based on auto-save setting
         if daemon_config.profile.thumbnail_auto_save_position {
@@ -278,13 +281,16 @@ fn handle_button_release(
             session_state.update_window_position(thumbnail.window, geom.x, geom.y);
             
             // ALWAYS update character_thumbnails in memory (for manual saves)
-            let settings = crate::types::CharacterSettings::new(
-                geom.x,
-                geom.y,
-                thumbnail.dimensions.width,
-                thumbnail.dimensions.height,
-            );
-            daemon_config.character_thumbnails.insert(thumbnail.character_name.clone(), settings);
+            // Skip logged-out clients with empty character name
+            if !thumbnail.character_name.is_empty() {
+                let settings = crate::types::CharacterSettings::new(
+                    geom.x,
+                    geom.y,
+                    thumbnail.dimensions.width,
+                    thumbnail.dimensions.height,
+                );
+                daemon_config.character_thumbnails.insert(thumbnail.character_name.clone(), settings);
+            }
             
             // Conditionally persist to disk based on auto-save setting
             if daemon_config.profile.thumbnail_auto_save_position {
@@ -471,13 +477,16 @@ pub fn handle_event<'a>(
                     .context("Failed to get geometry reply for newly detected thumbnail")?;
                 
                 // ALWAYS update character_thumbnails in memory (for manual saves)
-                let settings = crate::types::CharacterSettings::new(
-                    geom.x,
-                    geom.y,
-                    thumbnail.dimensions.width,
-                    thumbnail.dimensions.height,
-                );
-                daemon_config.character_thumbnails.insert(thumbnail.character_name.clone(), settings);
+                // Skip logged-out clients with empty character name
+                if !thumbnail.character_name.is_empty() {
+                    let settings = crate::types::CharacterSettings::new(
+                        geom.x,
+                        geom.y,
+                        thumbnail.dimensions.width,
+                        thumbnail.dimensions.height,
+                    );
+                    daemon_config.character_thumbnails.insert(thumbnail.character_name.clone(), settings);
+                }
                 
                 // Conditionally persist to disk based on auto-save setting
                 if daemon_config.profile.thumbnail_auto_save_position {

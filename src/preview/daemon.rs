@@ -61,14 +61,16 @@ fn get_eves<'a>(
                 .reply()
                 .context("Failed to get geometry reply during initial scan")?;
 
-            // Update character_thumbnails in memory
-            let settings = crate::types::CharacterSettings::new(
-                geom.x,
-                geom.y,
-                eve.dimensions.width,
-                eve.dimensions.height,
-            );
-            daemon_config.character_thumbnails.insert(eve.character_name.clone(), settings);
+            // Update character_thumbnails in memory (skip logged-out clients with empty name)
+            if !eve.character_name.is_empty() {
+                let settings = crate::types::CharacterSettings::new(
+                    geom.x,
+                    geom.y,
+                    eve.dimensions.width,
+                    eve.dimensions.height,
+                );
+                daemon_config.character_thumbnails.insert(eve.character_name.clone(), settings);
+            }
 
             eves.insert(w, eve);
         }
