@@ -225,6 +225,11 @@ impl CycleState {
     pub fn config_order(&self) -> &[String] {
         &self.config_order
     }
+
+    /// Get current cycle position (index in config_order)
+    pub fn current_position(&self) -> usize {
+        self.current_index
+    }
 }
 
 #[cfg(test)]

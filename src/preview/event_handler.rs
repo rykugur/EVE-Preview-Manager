@@ -45,7 +45,7 @@ fn handle_damage_notify(ctx: &AppContext, eves: &HashMap<Window, Thumbnail>, eve
 }
 
 /// Handle CreateNotify events - create thumbnail for new EVE window
-#[tracing::instrument(skip(ctx, daemon_config, eves, session_state, cycle_state, check_and_create_window))]
+#[tracing::instrument(skip(ctx, daemon_config, eves, session_state, cycle_state))]
 fn handle_create_notify<'a>(
     ctx: &AppContext<'a>,
     daemon_config: &mut DaemonConfig,
@@ -53,41 +53,51 @@ fn handle_create_notify<'a>(
     event: CreateNotifyEvent,
     session_state: &mut SessionState,
     cycle_state: &mut CycleState,
-    check_and_create_window: &impl Fn(&AppContext<'a>, &DaemonConfig, Window, &mut SessionState) -> Result<Option<Thumbnail<'a>>>,
 ) -> Result<()> {
+    use super::window_detection::{check_eve_window, check_and_create_window};
+    
     debug!(window = event.window, "CreateNotify received");
-    if let Some(thumbnail) = check_and_create_window(ctx, daemon_config, event.window, session_state)
-        .context(format!("Failed to check/create window for new window {}", event.window))? {
-        // Register with cycle state
-        info!(window = event.window, character = %thumbnail.character_name, "Created thumbnail for new EVE window");
+    
+    // First, check if this is an EVE window and register it with cycle state
+    // This happens regardless of whether thumbnails are enabled
+    if let Some(character_name) = check_eve_window(ctx, event.window, session_state)
+        .context(format!("Failed to check if window {} is EVE client", event.window))? {
+        info!(window = event.window, character = %character_name, "Detected new EVE window");
         
-        // Save initial position and dimensions for new character
-        // Query geometry to get actual position from X11
-        let geom = ctx.conn.get_geometry(thumbnail.window)
-            .context("Failed to query geometry for new thumbnail")?
-            .reply()
-            .context("Failed to get geometry reply for new thumbnail")?;
+        // Always register with cycle state for hotkey support
+        cycle_state.add_window(character_name.clone(), event.window);
         
-        // ALWAYS update character_thumbnails in memory (for manual saves)
-        // Skip logged-out clients with empty character name
-        if !thumbnail.character_name.is_empty() {
-            let settings = crate::types::CharacterSettings::new(
-                geom.x,
-                geom.y,
-                thumbnail.dimensions.width,
-                thumbnail.dimensions.height,
-            );
-            daemon_config.character_thumbnails.insert(thumbnail.character_name.clone(), settings);
-        }
-        
-        // Conditionally persist to disk based on auto-save setting
-        if daemon_config.profile.thumbnail_auto_save_position {
-            daemon_config.save()
-                .context(format!("Failed to save initial position for new character '{}'", thumbnail.character_name))?;
-        }
-        
-        cycle_state.add_window(thumbnail.character_name.clone(), event.window);
-        eves.insert(event.window, thumbnail);
+        // Only create thumbnail if thumbnails are enabled
+        if ctx.config.enabled
+            && let Some(thumbnail) = check_and_create_window(ctx, daemon_config, event.window, session_state)
+                .context(format!("Failed to create thumbnail for window {}", event.window))? {
+                
+                // Save initial position and dimensions for new character
+                let geom = ctx.conn.get_geometry(thumbnail.window)
+                    .context("Failed to query geometry for new thumbnail")?
+                    .reply()
+                    .context("Failed to get geometry reply for new thumbnail")?;
+                
+                // ALWAYS update character_thumbnails in memory (for manual saves)
+                // Skip logged-out clients with empty character name
+                if !thumbnail.character_name.is_empty() {
+                    let settings = crate::types::CharacterSettings::new(
+                        geom.x,
+                        geom.y,
+                        thumbnail.dimensions.width,
+                        thumbnail.dimensions.height,
+                    );
+                    daemon_config.character_thumbnails.insert(thumbnail.character_name.clone(), settings);
+                }
+                
+                // Conditionally persist to disk based on auto-save setting
+                if daemon_config.profile.thumbnail_auto_save_position {
+                    daemon_config.save()
+                        .context(format!("Failed to save initial position for new character '{}'", thumbnail.character_name))?;
+                }
+                
+                eves.insert(event.window, thumbnail);
+            }
     }
     Ok(())
 }
@@ -411,11 +421,10 @@ pub fn handle_event<'a>(
     event: Event,
     session_state: &mut SessionState,
     cycle_state: &mut CycleState,
-    check_and_create_window: impl Fn(&AppContext<'a>, &DaemonConfig, Window, &mut SessionState) -> Result<Option<Thumbnail<'a>>>,
 ) -> Result<()> {
     match event {
         DamageNotify(event) => handle_damage_notify(ctx, eves, event),
-        CreateNotify(event) => handle_create_notify(ctx, daemon_config, eves, event, session_state, cycle_state, &check_and_create_window),
+        CreateNotify(event) => handle_create_notify(ctx, daemon_config, eves, event, session_state, cycle_state),
         DestroyNotify(event) => handle_destroy_notify(eves, event, session_state, cycle_state),
         Event::FocusIn(event) => handle_focus_in(ctx, eves, event),
         Event::FocusOut(event) => handle_focus_out(ctx, eves, event),
@@ -463,39 +472,48 @@ pub fn handle_event<'a>(
                 thumbnail.set_character_name(new_character_name.to_string(), new_position)
                     .context(format!("Failed to update thumbnail after character change from '{}'", old_name))?;
                 
-            } else if event.atom == ctx.atoms.wm_name
-                && let Some(thumbnail) = check_and_create_window(ctx, daemon_config, event.window, session_state)
-                    .context(format!("Failed to create thumbnail for newly detected EVE window {}", event.window))?
-            {
-                // New EVE window detected
+            } else if event.atom == ctx.atoms.wm_name {
+                // Check if this is a new EVE window being detected (title change from generic to character name)
+                use super::window_detection::{check_eve_window, check_and_create_window};
                 
-                // Save initial position and dimensions for newly detected character
-                // (Happens when EVE window title changes from "EVE" to "EVE - CharacterName")
-                let geom = ctx.conn.get_geometry(thumbnail.window)
-                    .context("Failed to query geometry for newly detected thumbnail")?
-                    .reply()
-                    .context("Failed to get geometry reply for newly detected thumbnail")?;
-                
-                // ALWAYS update character_thumbnails in memory (for manual saves)
-                // Skip logged-out clients with empty character name
-                if !thumbnail.character_name.is_empty() {
-                    let settings = crate::types::CharacterSettings::new(
-                        geom.x,
-                        geom.y,
-                        thumbnail.dimensions.width,
-                        thumbnail.dimensions.height,
-                    );
-                    daemon_config.character_thumbnails.insert(thumbnail.character_name.clone(), settings);
+                if let Some(character_name) = check_eve_window(ctx, event.window, session_state)
+                    .context(format!("Failed to check if window {} became EVE client", event.window))? {
+                    
+                    // Register with cycle state (always, regardless of thumbnail setting)
+                    cycle_state.add_window(character_name.clone(), event.window);
+                    
+                    // Only create thumbnail if thumbnails are enabled
+                    if ctx.config.enabled
+                        && let Some(thumbnail) = check_and_create_window(ctx, daemon_config, event.window, session_state)
+                            .context(format!("Failed to create thumbnail for newly detected EVE window {}", event.window))? {
+                            
+                            // Save initial position and dimensions for newly detected character
+                            let geom = ctx.conn.get_geometry(thumbnail.window)
+                                .context("Failed to query geometry for newly detected thumbnail")?
+                                .reply()
+                                .context("Failed to get geometry reply for newly detected thumbnail")?;
+                            
+                            // ALWAYS update character_thumbnails in memory (for manual saves)
+                            // Skip logged-out clients with empty character name
+                            if !thumbnail.character_name.is_empty() {
+                                let settings = crate::types::CharacterSettings::new(
+                                    geom.x,
+                                    geom.y,
+                                    thumbnail.dimensions.width,
+                                    thumbnail.dimensions.height,
+                                );
+                                daemon_config.character_thumbnails.insert(thumbnail.character_name.clone(), settings);
+                            }
+                            
+                            // Conditionally persist to disk based on auto-save setting
+                            if daemon_config.profile.thumbnail_auto_save_position {
+                                daemon_config.save()
+                                    .context(format!("Failed to save initial position for newly detected character '{}'", thumbnail.character_name))?;
+                            }
+                            
+                            eves.insert(event.window, thumbnail);
+                        }
                 }
-                
-                // Conditionally persist to disk based on auto-save setting
-                if daemon_config.profile.thumbnail_auto_save_position {
-                    daemon_config.save()
-                        .context(format!("Failed to save initial position for newly detected character '{}'", thumbnail.character_name))?;
-                }
-                
-                cycle_state.add_window(thumbnail.character_name.clone(), event.window);
-                eves.insert(event.window, thumbnail);
             } else if event.atom == ctx.atoms.net_wm_state
                 && let Some(thumbnail) = eves.get_mut(&event.window)
                 && let Some(mut state) = ctx.conn

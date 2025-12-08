@@ -12,12 +12,13 @@ use crate::x11::{is_window_eve, is_window_minimized, AppContext};
 use super::session_state::SessionState;
 use super::thumbnail::Thumbnail;
 
-pub fn check_and_create_window<'a>(
-    ctx: &AppContext<'a>,
-    daemon_config: &DaemonConfig,
+/// Check if a window is an EVE client and return its character name
+/// Returns Some(character_name) for EVE windows, None for non-EVE windows
+pub fn check_eve_window(
+    ctx: &AppContext,
     window: Window,
     state: &mut SessionState,
-) -> Result<Option<Thumbnail<'a>>> {
+) -> Result<Option<String>> {
     let pid_atom = ctx.conn.intern_atom(false, b"_NET_WM_PID")
         .context("Failed to intern _NET_WM_PID atom")?
         .reply()
@@ -51,7 +52,7 @@ pub fn check_and_create_window<'a>(
                 })
                 .unwrap_or(true)
             {
-                return Ok(None); // Return if we can determine that the window is not running through wine.
+                return Ok(None);
             }
         } else {
             warn!(
@@ -81,62 +82,77 @@ pub fn check_and_create_window<'a>(
         )
         .context(format!("Failed to set focus event mask for EVE window {} ('{}')", window, character_name))?;
 
-        // Skip thumbnail creation if thumbnails are disabled (daemon still runs for hotkeys)
-        if !ctx.config.enabled {
-            debug!(
-                window = window,
-                character = %character_name,
-                "Skipping thumbnail creation (thumbnails disabled in config)"
-            );
-            return Ok(None);
-        }
+        Ok(Some(character_name))
+    } else {
+        Ok(None)
+    }
+}
 
-        // Get saved position and dimensions for this character/window
-        let position = state.get_position(
-            &character_name,
-            window,
-            &daemon_config.character_thumbnails,
-            daemon_config.profile.thumbnail_preserve_position_on_swap,
+pub fn check_and_create_window<'a>(
+    ctx: &AppContext<'a>,
+    daemon_config: &DaemonConfig,
+    window: Window,
+    state: &mut SessionState,
+) -> Result<Option<Thumbnail<'a>>> {
+    // Check if window is EVE client
+    let character_name = match check_eve_window(ctx, window, state)? {
+        Some(name) => name,
+        None => return Ok(None),
+    };
+
+    // Skip thumbnail creation if thumbnails are disabled (but window is still tracked for hotkeys)
+    if !ctx.config.enabled {
+        debug!(
+            window = window,
+            character = %character_name,
+            "Skipping thumbnail creation (thumbnails disabled), window still tracked for hotkeys"
         );
+        return Ok(None);
+    }
 
-        // Get dimensions from CharacterSettings or use auto-detected defaults
-        let dimensions = if let Some(settings) = daemon_config.character_thumbnails.get(&character_name) {
-            // If dimensions are 0 (not yet saved), auto-detect
-            if settings.dimensions.width == 0 || settings.dimensions.height == 0 {
-                let (w, h) = daemon_config.default_thumbnail_size(
-                    ctx.screen.width_in_pixels,
-                    ctx.screen.height_in_pixels,
-                );
-                Dimensions::new(w, h)
-            } else {
-                settings.dimensions
-            }
-        } else {
-            // Character not in settings yet - auto-detect
+    // Get saved position and dimensions for this character/window
+    let position = state.get_position(
+        &character_name,
+        window,
+        &daemon_config.character_thumbnails,
+        daemon_config.profile.thumbnail_preserve_position_on_swap,
+    );
+
+    // Get dimensions from CharacterSettings or use auto-detected defaults
+    let dimensions = if let Some(settings) = daemon_config.character_thumbnails.get(&character_name) {
+        // If dimensions are 0 (not yet saved), auto-detect
+        if settings.dimensions.width == 0 || settings.dimensions.height == 0 {
             let (w, h) = daemon_config.default_thumbnail_size(
                 ctx.screen.width_in_pixels,
                 ctx.screen.height_in_pixels,
             );
             Dimensions::new(w, h)
-        };
-
-        let mut thumbnail = Thumbnail::new(ctx, character_name.clone(), window, ctx.font_renderer, position, dimensions)
-            .context(format!("Failed to create thumbnail for '{}' (window {})", character_name, window))?;
-        if is_window_minimized(ctx.conn, window, ctx.atoms)
-            .context(format!("Failed to query minimized state for window {}", window))?
-        {
-            debug!(window = window, character = %character_name, "Window minimized at startup");
-            thumbnail
-                .minimized()
-                .context(format!("Failed to set minimized state for '{}'", character_name))?;
+        } else {
+            settings.dimensions
         }
-        info!(
-            window = window,
-            character = %character_name,
-            "Created thumbnail for EVE window"
-        );
-        Ok(Some(thumbnail))
     } else {
-        Ok(None)
+        // Character not in settings yet - auto-detect
+        let (w, h) = daemon_config.default_thumbnail_size(
+            ctx.screen.width_in_pixels,
+            ctx.screen.height_in_pixels,
+        );
+        Dimensions::new(w, h)
+    };
+
+    let mut thumbnail = Thumbnail::new(ctx, character_name.clone(), window, ctx.font_renderer, position, dimensions)
+        .context(format!("Failed to create thumbnail for '{}' (window {})", character_name, window))?;
+    if is_window_minimized(ctx.conn, window, ctx.atoms)
+        .context(format!("Failed to query minimized state for window {}", window))?
+    {
+        debug!(window = window, character = %character_name, "Window minimized at startup");
+        thumbnail
+            .minimized()
+            .context(format!("Failed to set minimized state for '{}'", character_name))?;
     }
+    info!(
+        window = window,
+        character = %character_name,
+        "Created thumbnail for EVE window"
+    );
+    Ok(Some(thumbnail))
 }
