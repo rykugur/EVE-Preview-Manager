@@ -231,7 +231,6 @@ mod tests {
                 hotkey_require_eve_focus: true,
                 hotkey_cycle_group: vec![],
                 character_hotkeys: HashMap::new(),
-                character_hotkey_order: vec![],
                 thumbnail_enabled: true,
                 character_thumbnails: HashMap::new(),
             },

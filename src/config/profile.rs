@@ -115,13 +115,9 @@ pub struct Profile {
 
     /// Per-character hotkey assignments (character_name -> optional binding)
     /// Allows direct switching to specific characters with dedicated hotkeys
+    /// Display order follows hotkey_cycle_group
     #[serde(default)]
     pub character_hotkeys: HashMap<String, crate::config::HotkeyBinding>,
-
-    /// Custom display order for per-character hotkeys UI
-    /// Contains character names in desired display order
-    #[serde(default)]
-    pub character_hotkey_order: Vec<String>,
 
     // Per-profile character positions and dimensions
     #[serde(default)]
@@ -212,7 +208,6 @@ fn default_profiles() -> Vec<Profile> {
         hotkey_require_eve_focus: crate::constants::defaults::behavior::HOTKEY_REQUIRE_EVE_FOCUS,
         hotkey_cycle_group: Vec::new(),
         character_hotkeys: HashMap::new(),
-        character_hotkey_order: Vec::new(),
         character_thumbnails: HashMap::new(),
     }]
 }

@@ -3,17 +3,12 @@
 use eframe::egui;
 use crate::config::profile::Profile;
 use crate::constants::gui::*;
+use crate::gui::key_capture::CaptureResult;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EditorMode {
     TextEdit,
     DragDrop,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ViewTab {
-    CycleGroup,
-    PerCharacterHotkeys,
 }
 
 /// State for cycle order settings UI
@@ -22,7 +17,6 @@ pub struct CycleOrderSettingsState {
     editor_mode: EditorMode,
     show_add_characters_popup: bool,
     character_selections: std::collections::HashMap<String, bool>,
-    active_tab: ViewTab,
 }
 
 impl CycleOrderSettingsState {
@@ -32,23 +26,44 @@ impl CycleOrderSettingsState {
             editor_mode: EditorMode::DragDrop,
             show_add_characters_popup: false,
             character_selections: std::collections::HashMap::new(),
-            active_tab: ViewTab::CycleGroup,
         }
     }
 
-    /// Load cycle group from profile into text buffer
+    /// Load cycle group from profile into text buffer with hotkey suffixes
     pub fn load_from_profile(&mut self, profile: &Profile) {
-        self.cycle_group_text = profile.hotkey_cycle_group.join("\n");
+        self.cycle_group_text = profile.hotkey_cycle_group
+            .iter()
+            .map(|char_name| {
+                if let Some(binding) = profile.character_hotkeys.get(char_name) {
+                    format!("{} [{}]", char_name, binding.display_name())
+                } else {
+                    char_name.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("\n");
     }
 
-    /// Parse text buffer back into profile's cycle group
+    /// Parse text buffer back into profile's cycle group and character hotkeys
+    /// Format: "CharacterName [HOTKEY]" or just "CharacterName"
     fn save_to_profile(&self, profile: &mut Profile) {
         profile.hotkey_cycle_group = self.cycle_group_text
             .lines()
             .map(|s| s.trim())
             .filter(|s| !s.is_empty())
-            .map(|s| s.to_string())
+            .map(|line| {
+                // Parse "CharacterName [HOTKEY]" format
+                if let Some(bracket_pos) = line.rfind('[') {
+                    // Extract character name before bracket
+                    line[..bracket_pos].trim().to_string()
+                } else {
+                    line.to_string()
+                }
+            })
             .collect();
+
+        // Note: Hotkey bindings are updated through the Bind button, not text parsing
+        // Text mode shows hotkeys but doesn't allow editing them
     }
 }
 
@@ -58,44 +73,32 @@ impl Default for CycleOrderSettingsState {
     }
 }
 
-/// Renders cycle order settings UI and returns true if changes were made
-/// hotkey_state is optional and only needed for per-character hotkeys tab
+/// Renders cycle order settings UI with integrated per-character hotkeys
+/// Returns true if changes were made
 pub fn ui(
-    ui: &mut egui::Ui, 
-    profile: &mut Profile, 
+    ui: &mut egui::Ui,
+    profile: &mut Profile,
     state: &mut CycleOrderSettingsState,
-    hotkey_state: Option<&mut crate::gui::components::hotkey_settings::HotkeySettingsState>
+    hotkey_state: &mut crate::gui::components::hotkey_settings::HotkeySettingsState
 ) -> bool {
     let mut changed = false;
 
     ui.group(|ui| {
-        // Tab selector buttons
-        ui.horizontal(|ui| {
-            ui.selectable_value(&mut state.active_tab, ViewTab::CycleGroup, "Cycle Group");
-            ui.selectable_value(&mut state.active_tab, ViewTab::PerCharacterHotkeys, "Per-Character Hotkeys");
-        });
-        
-        ui.add_space(ITEM_SPACING);
-        ui.separator();
-        ui.add_space(ITEM_SPACING);
-
-        // Show content based on active tab
-        match state.active_tab {
-            ViewTab::CycleGroup => {
-                render_cycle_group_tab(ui, profile, state, &mut changed);
-            }
-            ViewTab::PerCharacterHotkeys => {
-                render_per_character_hotkeys_tab(ui, profile, hotkey_state, &mut changed);
-            }
-        }
+        render_unified_cycle_group_tab(ui, profile, state, hotkey_state, &mut changed);
     });
 
     changed
 }
 
-/// Renders the cycle group order tab
-fn render_cycle_group_tab(ui: &mut egui::Ui, profile: &mut Profile, state: &mut CycleOrderSettingsState, changed: &mut bool) {
-    ui.label(egui::RichText::new("Character Cycle Order").strong());
+/// Renders the unified cycle group tab with integrated per-character hotkeys
+fn render_unified_cycle_group_tab(
+    ui: &mut egui::Ui,
+    profile: &mut Profile,
+    state: &mut CycleOrderSettingsState,
+    hotkey_state: &mut crate::gui::components::hotkey_settings::HotkeySettingsState,
+    changed: &mut bool
+) {
+    ui.label(egui::RichText::new("Character Cycle Order & Hotkeys").strong());
     ui.add_space(ITEM_SPACING);
 
         // Mode selector
@@ -171,18 +174,44 @@ fn render_cycle_group_tab(ui: &mut egui::Ui, profile: &mut Profile, state: &mut 
                     for (row_idx, character) in profile.hotkey_cycle_group.iter().enumerate() {
                         let item_id = egui::Id::new("cycle_character").with(row_idx);
 
-                        // Make entire row draggable
-                        let response = ui.dnd_drag_source(item_id, row_idx, |ui| {
-                            ui.horizontal(|ui| {
+                        // Build row with draggable handle + name, and non-draggable buttons
+                        let response = ui.horizontal(|ui| {
+                            // Draggable section: handle + character name
+                            let drag_response = ui.dnd_drag_source(item_id, row_idx, |ui| {
                                 ui.label(egui::RichText::new("☰").weak());
                                 ui.label(character);
+                            }).response;
 
-                                // Spacer to make row full width and fully draggable
-                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    ui.label(" ");
-                                });
+                            // Right-aligned buttons (not draggable)
+                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                // Delete hotkey button
+                                let has_binding = profile.character_hotkeys.contains_key(character);
+                                if has_binding {
+                                    if ui.small_button("✖").on_hover_text("Remove hotkey").clicked() {
+                                        profile.character_hotkeys.remove(character);
+                                        *changed = true;
+                                    }
+                                }
+
+                                // Bind button
+                                let bind_text = if hotkey_state.is_capturing_for(character) {
+                                    "Capturing..."
+                                } else {
+                                    "Bind"
+                                };
+
+                                if ui.small_button(bind_text).on_hover_text("Click to capture hotkey").clicked() {
+                                    hotkey_state.start_key_capture_for_character(character.clone());
+                                }
+
+                                // Show hotkey if assigned
+                                if let Some(binding) = profile.character_hotkeys.get(character) {
+                                    ui.label(egui::RichText::new(format!("[{}]", binding.display_name())).weak());
+                                }
                             });
-                        }).response;
+
+                            drag_response
+                        }).inner;
 
                         // Add separator line between items
                         if row_idx < profile.hotkey_cycle_group.len() - 1 {
@@ -258,183 +287,33 @@ fn render_cycle_group_tab(ui: &mut egui::Ui, profile: &mut Profile, state: &mut 
             }
         }
 
-        ui.add_space(ITEM_SPACING / 2.0);
+    // Handle hotkey capture results (outside the drag-drop EditorMode match)
+    if hotkey_state.has_capture_result() {
+        if let Some((target, result)) = hotkey_state.take_capture_result() {
+            match result {
+                CaptureResult::Captured(binding) => {
+                    profile.character_hotkeys.insert(target, binding);
+                    *changed = true;
+                }
+                CaptureResult::Cancelled => {
+                    // User cancelled, do nothing
+                }
+                CaptureResult::Timeout => {
+                    // Timeout occurred, do nothing
+                }
+                CaptureResult::Error(_) => {
+                    // Error occurred, do nothing (error was already displayed)
+                }
+            }
+        }
+    }
 
-        ui.label(egui::RichText::new(
-            format!("Current cycle order: {} character(s)", profile.hotkey_cycle_group.len()))
-            .small()
-            .weak());
-}
-
-/// Renders the per-character hotkeys tab
-fn render_per_character_hotkeys_tab(
-    ui: &mut egui::Ui,
-    profile: &mut Profile,
-    hotkey_state: Option<&mut crate::gui::components::hotkey_settings::HotkeySettingsState>,
-    changed: &mut bool
-) {
-    ui.label(egui::RichText::new("Per-Character Hotkeys").strong());
-    ui.add_space(ITEM_SPACING);
+    ui.add_space(ITEM_SPACING / 2.0);
 
     ui.label(egui::RichText::new(
-        "Assign unique hotkeys to jump directly to specific characters. Drag to reorder.")
+        format!("Current cycle order: {} character(s)", profile.hotkey_cycle_group.len()))
         .small()
         .weak());
-
-    ui.add_space(ITEM_SPACING);
-
-    // Get character names - use custom order if available, otherwise alphabetical
-    let all_char_names: std::collections::HashSet<String> = profile.character_thumbnails.keys().cloned().collect();
-    
-    // Build ordered list: first use saved order (filtering out removed chars), then add any new chars alphabetically
-    let mut char_names: Vec<String> = profile.character_hotkey_order.iter()
-        .filter(|name| all_char_names.contains(*name))
-        .cloned()
-        .collect();
-    
-    // Add any new characters not in the order list
-    let mut new_chars: Vec<String> = all_char_names.iter()
-        .filter(|name| !char_names.contains(name))
-        .cloned()
-        .collect();
-    new_chars.sort();
-    char_names.extend(new_chars);
-
-    // Update the order list if it changed (new chars added or removed chars filtered)
-    if char_names != profile.character_hotkey_order {
-        profile.character_hotkey_order = char_names.clone();
-        *changed = true;
-    }
-
-    if char_names.is_empty() {
-        ui.label(egui::RichText::new("No characters configured yet")
-            .weak()
-            .italics());
-    } else if let Some(hotkey_state) = hotkey_state {
-        let mut from_idx: Option<usize> = None;
-        let mut to_idx: Option<usize> = None;
-
-        let frame = egui::Frame::default()
-            .inner_margin(4.0)
-            .stroke(ui.visuals().widgets.noninteractive.bg_stroke);
-
-        // Drag-drop zone containing all items
-        let (_, dropped_payload) = ui.dnd_drop_zone::<usize, ()>(frame, |ui| {
-            ui.set_min_height(100.0);
-
-            for (idx, char_name) in char_names.iter().enumerate() {
-                let item_id = egui::Id::new("per_char_hotkey").with(idx);
-
-                // Get binding info
-                let has_binding = profile.character_hotkeys.get(char_name).is_some();
-                let binding_text = if let Some(binding) = profile.character_hotkeys.get(char_name) {
-                    binding.display_name()
-                } else {
-                    "Not Set".to_string()
-                };
-
-                // Build the row with draggable handle
-                let response = ui.horizontal(|ui| {
-                    // Make only the drag handle draggable
-                    let drag_handle = ui.dnd_drag_source(item_id, idx, |ui| {
-                        ui.label(egui::RichText::new("☰").weak());
-                    }).response;
-                    
-                    ui.label(egui::RichText::new(char_name).strong());
-                    
-                    ui.add_space(ITEM_SPACING);
-
-                    // Show current binding
-                    let color = if !has_binding {
-                        egui::Color32::from_rgb(150, 150, 150)
-                    } else {
-                        ui.style().visuals.text_color()
-                    };
-                    ui.label(egui::RichText::new(&binding_text).color(color));
-
-                    // Buttons on the right
-                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        // Clear button if bound
-                        if has_binding {
-                            if ui.button("✖").clicked() {
-                                profile.character_hotkeys.remove(char_name);
-                                *changed = true;
-                            }
-                        }
-
-                        // Bind/Change button
-                        let button_text = if has_binding {
-                            "🔄 Change"
-                        } else {
-                            "🎹 Bind Key"
-                        };
-
-                        if ui.button(button_text).clicked() {
-                            hotkey_state.start_key_capture_for_character(char_name.clone());
-                        }
-                    });
-                    
-                    drag_handle
-                }).inner;
-
-                // Add separator line between items
-                if idx < char_names.len() - 1 {
-                    ui.separator();
-                }
-
-                // Detect drops onto this item for insertion preview
-                if let (Some(pointer), Some(hovered_payload)) = (
-                    ui.input(|i| i.pointer.interact_pos()),
-                    response.dnd_hover_payload::<usize>(),
-                ) {
-                    let rect = response.rect;
-                    let stroke = egui::Stroke::new(2.0, ui.visuals().selection.stroke.color);
-
-                    let insert_idx = if *hovered_payload == idx {
-                        // Dragged onto ourselves - show line at current position
-                        ui.painter().hline(rect.x_range(), rect.center().y, stroke);
-                        idx
-                    } else if pointer.y < rect.center().y {
-                        // Above this item
-                        ui.painter().hline(rect.x_range(), rect.top(), stroke);
-                        idx
-                    } else {
-                        // Below this item
-                        ui.painter().hline(rect.x_range(), rect.bottom(), stroke);
-                        idx + 1
-                    };
-
-                    if let Some(dragged_payload) = response.dnd_release_payload::<usize>() {
-                        // Item was dropped here
-                        from_idx = Some(*dragged_payload);
-                        to_idx = Some(insert_idx);
-                        *changed = true;
-                    }
-                }
-            }
-        });
-
-        // Handle drop onto empty area (append to end)
-        if let Some(dragged_payload) = dropped_payload {
-            from_idx = Some(*dragged_payload);
-            to_idx = Some(char_names.len());
-            *changed = true;
-        }
-
-        // Perform reordering if drag completed
-        if let (Some(from), Some(to)) = (from_idx, to_idx) {
-            if from != to && from < char_names.len() {
-                let char_to_move = char_names.remove(from);
-                let insert_pos = if to > from { to - 1 } else { to };
-                char_names.insert(insert_pos, char_to_move);
-                profile.character_hotkey_order = char_names;
-            }
-        }
-    } else {
-        ui.label(egui::RichText::new("Hotkey capture not available")
-            .weak()
-            .italics());
-    }
 }
 
 fn handle_add_characters_popup(

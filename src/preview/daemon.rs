@@ -132,8 +132,8 @@ pub fn run_preview_daemon() -> Result<()> {
     // Create channel for hotkey thread → main loop
     let (hotkey_tx, hotkey_rx) = mpsc::channel();
 
-    // Build character hotkey list from character_hotkeys HashMap, preserving display order
-    let character_hotkeys: Vec<_> = daemon_config.profile.character_hotkey_order
+    // Build character hotkey list from character_hotkeys HashMap, using cycle group order
+    let character_hotkeys: Vec<_> = daemon_config.profile.hotkey_cycle_group
         .iter()
         .filter_map(|char_name| {
             if let Some(binding) = daemon_config.profile.character_hotkeys.get(char_name) {
@@ -154,7 +154,7 @@ pub fn run_preview_daemon() -> Result<()> {
     let mut hotkey_groups: HashMap<crate::config::HotkeyBinding, Vec<String>> = HashMap::new();
     let mut hotkey_group_indices: HashMap<crate::config::HotkeyBinding, usize> = HashMap::new();
 
-    for char_name in &daemon_config.profile.character_hotkey_order {
+    for char_name in &daemon_config.profile.hotkey_cycle_group {
         if let Some(binding) = daemon_config.profile.character_hotkeys.get(char_name) {
             hotkey_groups.entry(binding.clone())
                 .or_default()
@@ -164,7 +164,7 @@ pub fn run_preview_daemon() -> Result<()> {
 
     info!(
         unique_hotkeys = hotkey_groups.len(),
-        total_characters = daemon_config.profile.character_hotkey_order.len(),
+        total_characters = daemon_config.profile.hotkey_cycle_group.len(),
         "Built per-character hotkey groups"
     );
 

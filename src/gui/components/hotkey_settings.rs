@@ -90,6 +90,35 @@ impl HotkeySettingsState {
     pub fn start_key_capture_for_character(&mut self, character_name: String) {
         self.start_key_capture(CaptureTarget::Character(character_name));
     }
+
+    /// Check if currently capturing for a specific character
+    pub fn is_capturing_for(&self, character_name: &str) -> bool {
+        if let Some(CaptureTarget::Character(ref target)) = self.capture_target {
+            target == character_name && self.show_key_capture_dialog
+        } else {
+            false
+        }
+    }
+
+    /// Check if there's a capture result ready
+    pub fn has_capture_result(&self) -> bool {
+        self.capture_result.is_some() && self.capture_target.is_some()
+    }
+
+    /// Take the capture result, clearing it from state
+    /// Returns (character_name, result) if result was for a character
+    pub fn take_capture_result(&mut self) -> Option<(String, CaptureResult)> {
+        if let (Some(CaptureTarget::Character(char_name)), Some(result)) =
+            (self.capture_target.take(), self.capture_result.take())
+        {
+            Some((char_name, result))
+        } else {
+            // Clear state if not a character target
+            self.capture_target = None;
+            self.capture_result = None;
+            None
+        }
+    }
 }
 
 impl Default for HotkeySettingsState {
