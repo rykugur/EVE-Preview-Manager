@@ -877,7 +877,7 @@ pub fn run_gui() -> Result<()> {
     let mut viewport_builder = egui::ViewportBuilder::default()
         .with_inner_size([window_width, window_height])
         .with_min_inner_size([WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT])
-        .with_title("EVE Preview Manager");
+        .with_title("EVE Preview Manager - v".to_string() + env!("CARGO_PKG_VERSION"));
 
     if let Some(icon_data) = icon {
         viewport_builder = viewport_builder.with_icon(icon_data);
@@ -889,7 +889,7 @@ pub fn run_gui() -> Result<()> {
     };
 
     eframe::run_native(
-        "EVE Preview Manager",
+        &format!("EVE Preview Manager - v{}", env!("CARGO_PKG_VERSION")),
         options,
         Box::new(|cc| Ok(Box::new(ManagerApp::new(cc)))),
     )
