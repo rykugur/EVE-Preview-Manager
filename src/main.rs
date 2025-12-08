@@ -4,6 +4,7 @@ mod color;
 mod config;
 mod constants;
 mod gui;
+mod input;
 mod preview;
 mod types;
 mod x11;

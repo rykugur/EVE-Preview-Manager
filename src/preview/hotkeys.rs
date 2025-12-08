@@ -1,6 +1,7 @@
-//! Global hotkey listener using evdev for raw keyboard input
+//! Global hotkey listener using evdev for raw keyboard and mouse input
 //!
-//! Monitors keyboard devices directly via /dev/input for low-latency hotkey detection.
+//! Monitors input devices directly via /dev/input for low-latency hotkey detection.
+//! Supports both keyboard keys and mouse buttons (including Mouse 4/5 side buttons).
 //! Requires 'input' group membership to access raw input devices.
 
 use anyhow::{Context, Result};
@@ -11,6 +12,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::config::HotkeyBinding;
 use crate::constants::{input, paths, permissions};
+use crate::input::device_detection;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CycleCommand {
@@ -18,50 +20,14 @@ pub enum CycleCommand {
     Backward,
 }
 
-/// Find all keyboard devices (devices that have a Tab key)
-fn find_all_keyboard_devices() -> Result<Vec<(Device, std::path::PathBuf)>> {
-    info!(path = %paths::DEV_INPUT, "Scanning for keyboard devices...");
-
-    let mut devices = Vec::new();
-
-    for entry in std::fs::read_dir(paths::DEV_INPUT)
-        .context(format!("Failed to read {} - are you in the '{}' group?", paths::DEV_INPUT, permissions::INPUT_GROUP))?
-    {
-        let entry = entry?;
-        let path = entry.path();
-
-        if let Ok(device) = Device::open(&path)
-            && let Some(keys) = device.supported_keys()
-                    && keys.contains(KeyCode(input::KEY_TAB)) {
-                    let key_count = keys.iter().count();
-                    info!(device_path = %path.display(), name = ?device.name(), key_count = key_count, "Found keyboard device");
-                    devices.push((device, path));
-                }
-    }
-
-    if devices.is_empty() {
-        anyhow::bail!(
-            "No keyboard device found. Ensure you're in '{}' group:\n\
-             {}\n\
-             Then log out and back in.",
-            permissions::INPUT_GROUP,
-            permissions::ADD_TO_INPUT_GROUP
-        )
-    }
-
-    info!(count = devices.len(), "Listening on keyboard device(s)");
-
-    Ok(devices)
-}
-
-/// Spawn background threads to listen for configured hotkeys on keyboard devices
+/// Spawn background threads to listen for configured hotkeys on input devices (keyboards and mice)
 pub fn spawn_listener(
     sender: Sender<CycleCommand>,
     forward_key: HotkeyBinding,
     backward_key: HotkeyBinding,
     selected_device_id: Option<String>,
 ) -> Result<Vec<thread::JoinHandle<()>>> {
-    let mut devices = find_all_keyboard_devices()?;
+    let mut devices = device_detection::find_all_input_devices_with_paths()?;
 
     if let Some(device_id) = selected_device_id {
         info!(device_id = %device_id, "Filtering to specific input device");
@@ -215,8 +181,12 @@ pub fn list_input_devices() -> Result<Vec<(String, String)>> {
                     };
 
                     if let Ok(device) = Device::open(&absolute_path)
-                        && let Some(keys) = device.supported_keys()
-                            && keys.contains(KeyCode(input::KEY_TAB)) {
+                        && let Some(keys) = device.supported_keys() {
+                            // Accept both keyboards (Tab key) and mice (left button)
+                            let is_keyboard = keys.contains(KeyCode(input::KEY_TAB));
+                            let is_mouse = keys.contains(KeyCode(input::BTN_LEFT));
+
+                            if is_keyboard || is_mouse {
                                 let friendly_name = name
                                     .replace("-event-kbd", "")
                                     .replace("-event-mouse", "")
@@ -225,6 +195,7 @@ pub fn list_input_devices() -> Result<Vec<(String, String)>> {
 
                                 devices.push((name.to_string(), friendly_name));
                             }
+                        }
                 }
     }
 

@@ -34,12 +34,15 @@ pub mod input {
 
     /// Key code for Tab key - used to identify keyboard devices (from Linux input-event-codes.h)
     pub const KEY_TAB: u16 = 15;
-    
+
     /// Key code for Left Shift key
     pub const KEY_LEFTSHIFT: u16 = 42;
-    
-    /// Key code for Right Shift key  
+
+    /// Key code for Right Shift key
     pub const KEY_RIGHTSHIFT: u16 = 54;
+
+    /// Button code for left mouse button - used to identify mouse devices (BTN_LEFT = 0x110)
+    pub const BTN_LEFT: u16 = 272;
 }
 
 /// Mouse button constants

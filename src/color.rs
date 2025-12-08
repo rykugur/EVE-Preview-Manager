@@ -106,8 +106,8 @@ mod tests {
         // 6-digit format (RRGGBB) - should prepend FF for full opacity
         assert_eq!(HexColor::parse("#FF0000"), Some(HexColor(0xFFFF0000)));
         assert_eq!(HexColor::parse("FF0000"), Some(HexColor(0xFFFF0000)));
-        assert_eq!(HexColor::parse("#5bfc37"), Some(HexColor(0xFF5bfc37)));
-        assert_eq!(HexColor::parse("5bfc37"), Some(HexColor(0xFF5bfc37)));
+        assert_eq!(HexColor::parse("#5bfc37"), Some(HexColor(0xFF5BFC37)));
+        assert_eq!(HexColor::parse("5bfc37"), Some(HexColor(0xFF5BFC37)));
         
         // Invalid
         assert_eq!(HexColor::parse("invalid"), None);
@@ -143,7 +143,7 @@ mod tests {
         let opacity = Opacity::from_percent(50);
         let argb = opacity.to_argb32();
         let alpha = (argb >> 24) & 0xFF;
-        assert!(alpha >= 127 && alpha <= 128); // ~50% of 255
+        assert!((127..=128).contains(&alpha)); // ~50% of 255
     }
 
     #[test]

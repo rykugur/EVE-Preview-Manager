@@ -189,6 +189,7 @@ impl DaemonConfig {
 mod tests {
     use super::*;
 
+    #[allow(clippy::too_many_arguments)]
     fn test_config(
         opacity_percent: u8,
         border_size: u16,
@@ -243,7 +244,7 @@ mod tests {
         assert_eq!(config.border_size, 3);
         assert_eq!(config.text_offset.x, 15);
         assert_eq!(config.text_offset.y, 25);
-        assert_eq!(config.hide_when_no_focus, true);
+        assert!(config.hide_when_no_focus);
         assert_eq!(config.opacity, 0xBF000000);
         assert_eq!(config.border_color.red, 0);
         assert_eq!(config.border_color.green, 65535);

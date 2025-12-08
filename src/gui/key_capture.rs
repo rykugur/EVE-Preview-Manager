@@ -1,7 +1,8 @@
 //! Key capture functionality for interactive hotkey binding
+//! Supports both keyboard keys and mouse buttons
 
 use anyhow::{Context, Result};
-use evdev::{Device, EventType, KeyCode};
+use evdev::EventType;
 use std::sync::mpsc::{self, Receiver, Sender};
 use std::thread;
 use std::time::Duration;
@@ -9,6 +10,7 @@ use tracing::{debug, info, warn};
 
 use crate::config::HotkeyBinding;
 use crate::constants::{input, paths, permissions};
+use crate::input::device_detection;
 
 /// Result of a key capture operation
 #[derive(Debug, Clone)]
@@ -45,7 +47,7 @@ impl CaptureState {
             alt: false,
             super_key: false,
             key_code: None,
-            description: "Press any key combination...".to_string(),
+            description: "Press any key or mouse button...".to_string(),
         }
     }
 
@@ -68,7 +70,7 @@ impl CaptureState {
             }
 
             if parts.is_empty() {
-                self.description = "Press any key combination...".to_string();
+                self.description = "Press any key or mouse button...".to_string();
             } else {
                 self.description = format!("{}+?", parts.join("+"));
             }
@@ -125,9 +127,9 @@ pub fn start_capture() -> Result<(Receiver<CaptureState>, Receiver<CaptureResult
 
 /// Blocking key capture that sends state updates via channel
 fn capture_key_blocking(state_tx: Sender<CaptureState>) -> Result<CaptureResult> {
-    // Find all keyboard devices
-    let mut devices = find_all_keyboard_devices()
-        .context("Failed to find keyboard devices for key capture")?;
+    // Find all input devices (keyboards and mice)
+    let mut devices = device_detection::find_all_input_devices()
+        .context("Failed to find input devices for key capture")?;
 
     // Set all devices to non-blocking mode so we can poll them all
     for device in &mut devices {
@@ -135,7 +137,7 @@ fn capture_key_blocking(state_tx: Sender<CaptureState>) -> Result<CaptureResult>
             .context("Failed to set device to non-blocking mode")?;
     }
 
-    info!(count = devices.len(), "Starting key capture on all keyboards (non-blocking mode)");
+    info!(count = devices.len(), "Starting key capture on all input devices (non-blocking mode)");
 
     let mut state = CaptureState::new();
     let _ = state_tx.send(state.clone());
@@ -239,40 +241,4 @@ fn capture_key_blocking(state_tx: Sender<CaptureState>) -> Result<CaptureResult>
         // Small sleep to avoid busy-waiting when polling multiple devices
         thread::sleep(Duration::from_millis(10));
     }
-}
-
-/// Find all keyboard devices (devices that have a Tab key)
-fn find_all_keyboard_devices() -> Result<Vec<Device>> {
-    info!(path = %paths::DEV_INPUT, "Scanning for keyboard devices for key capture...");
-
-    let mut devices = Vec::new();
-
-    for entry in std::fs::read_dir(paths::DEV_INPUT)
-        .context(format!("Failed to read {} directory", paths::DEV_INPUT))?
-    {
-        let entry = entry?;
-        let path = entry.path();
-
-        if let Ok(device) = Device::open(&path) {
-            // Check if it has Tab key (standard keyboard indicator)
-            if let Some(keys) = device.supported_keys()
-                && keys.contains(KeyCode(input::KEY_TAB)) {
-                    let key_count = keys.iter().count();
-                    info!(device_path = %path.display(), name = ?device.name(), key_count = key_count, "Found keyboard device for capture");
-                    devices.push(device);
-                }
-        }
-    }
-
-    if devices.is_empty() {
-        return Err(anyhow::anyhow!(
-            "No keyboard device found for key capture. Ensure you're in '{}' group:\n{}\nThen log out and back in.",
-            permissions::INPUT_GROUP,
-            permissions::ADD_TO_INPUT_GROUP
-        ));
-    }
-
-    info!(count = devices.len(), "Found keyboard devices for key capture");
-
-    Ok(devices)
 }
