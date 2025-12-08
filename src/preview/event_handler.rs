@@ -24,6 +24,11 @@ use super::thumbnail::Thumbnail;
 /// Handle DamageNotify events - update damaged thumbnail
 #[tracing::instrument(skip(ctx, eves))]
 fn handle_damage_notify(ctx: &AppContext, eves: &HashMap<Window, Thumbnail>, event: x11rb::protocol::damage::NotifyEvent) -> Result<()> {
+    // Skip rendering updates if thumbnails are disabled (daemon still runs for hotkeys)
+    if !ctx.config.enabled {
+        return Ok(());
+    }
+
     // No logging - this fires every frame and would flood logs
     if let Some(thumbnail) = eves
         .values()

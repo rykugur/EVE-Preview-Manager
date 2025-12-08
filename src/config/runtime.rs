@@ -19,6 +19,7 @@ use crate::types::{CharacterSettings, Position, TextOffset};
 /// Immutable after creation - can be borrowed without RefCell
 #[derive(Debug, Clone)]
 pub struct DisplayConfig {
+    pub enabled: bool,
     pub opacity: u32,
     pub border_size: u16,
     pub border_color: Color,
@@ -67,6 +68,7 @@ impl DaemonConfig {
         let opacity = Opacity::from_percent(self.profile.thumbnail_opacity).to_argb32();
 
         DisplayConfig {
+            enabled: self.profile.thumbnail_enabled,
             opacity,
             border_size: self.profile.thumbnail_border_size,
             border_color,

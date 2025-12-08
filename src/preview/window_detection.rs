@@ -80,15 +80,25 @@ pub fn check_and_create_window<'a>(
                 .event_mask(EventMask::PROPERTY_CHANGE | EventMask::FOCUS_CHANGE),
         )
         .context(format!("Failed to set focus event mask for EVE window {} ('{}')", window, character_name))?;
-        
+
+        // Skip thumbnail creation if thumbnails are disabled (daemon still runs for hotkeys)
+        if !ctx.config.enabled {
+            debug!(
+                window = window,
+                character = %character_name,
+                "Skipping thumbnail creation (thumbnails disabled in config)"
+            );
+            return Ok(None);
+        }
+
         // Get saved position and dimensions for this character/window
         let position = state.get_position(
-            &character_name, 
-            window, 
+            &character_name,
+            window,
             &daemon_config.character_thumbnails,
             daemon_config.profile.thumbnail_preserve_position_on_swap,
         );
-        
+
         // Get dimensions from CharacterSettings or use auto-detected defaults
         let dimensions = if let Some(settings) = daemon_config.character_thumbnails.get(&character_name) {
             // If dimensions are 0 (not yet saved), auto-detect
@@ -109,7 +119,7 @@ pub fn check_and_create_window<'a>(
             );
             Dimensions::new(w, h)
         };
-        
+
         let mut thumbnail = Thumbnail::new(ctx, character_name.clone(), window, ctx.font_renderer, position, dimensions)
             .context(format!("Failed to create thumbnail for '{}' (window {})", character_name, window))?;
         if is_window_minimized(ctx.conn, window, ctx.atoms)

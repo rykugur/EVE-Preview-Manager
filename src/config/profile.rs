@@ -55,8 +55,11 @@ pub struct Profile {
     /// Default thumbnail height for new characters
     #[serde(default = "default_thumbnail_height")]
     pub thumbnail_default_height: u16,
-    
+
     // Thumbnail visual settings
+    /// Enable/disable thumbnail rendering entirely (daemon still runs for hotkeys)
+    #[serde(default = "default_thumbnail_enabled")]
+    pub thumbnail_enabled: bool,
     pub thumbnail_opacity: u8,
     #[serde(default = "default_border_enabled")]
     pub thumbnail_border: bool,
@@ -144,6 +147,10 @@ fn default_thumbnail_height() -> u16 {
     crate::constants::defaults::thumbnail::HEIGHT
 }
 
+fn default_thumbnail_enabled() -> bool {
+    true // Default: thumbnails enabled
+}
+
 fn default_border_enabled() -> bool {
     crate::constants::defaults::border::ENABLED
 }
@@ -173,6 +180,7 @@ fn default_profiles() -> Vec<Profile> {
         profile_description: crate::constants::defaults::behavior::PROFILE_DESCRIPTION.to_string(),
         thumbnail_default_width: default_thumbnail_width(),
         thumbnail_default_height: default_thumbnail_height(),
+        thumbnail_enabled: default_thumbnail_enabled(),
         thumbnail_opacity: crate::constants::defaults::thumbnail::OPACITY_PERCENT,
         thumbnail_border: crate::constants::defaults::border::ENABLED,
         thumbnail_border_size: crate::constants::defaults::border::SIZE,

@@ -38,15 +38,28 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut VisualSettingsSt
     ui.group(|ui| {
         ui.label(egui::RichText::new("Visual Settings").strong());
         ui.add_space(ITEM_SPACING);
-        
-        // Opacity
-        ui.horizontal(|ui| {
-            ui.label("Opacity:");
-            if ui.add(egui::Slider::new(&mut profile.thumbnail_opacity, 0..=100)
-                .suffix("%")).changed() {
-                changed = true;
-            }
-        });
+
+        // Enable/disable thumbnail rendering
+        if ui.checkbox(&mut profile.thumbnail_enabled, "Enable thumbnail previews").changed() {
+            changed = true;
+        }
+        ui.label(egui::RichText::new(
+            "When disabled, daemon still runs for hotkeys but thumbnails are not rendered")
+            .small()
+            .weak());
+
+        ui.add_space(ITEM_SPACING);
+
+        // Remaining settings are grayed out when thumbnails disabled
+        ui.add_enabled_ui(profile.thumbnail_enabled, |ui| {
+            // Opacity
+            ui.horizontal(|ui| {
+                ui.label("Opacity:");
+                if ui.add(egui::Slider::new(&mut profile.thumbnail_opacity, 0..=100)
+                    .suffix("%")).changed() {
+                    changed = true;
+                }
+            });
         
         // Border toggle
         ui.horizontal(|ui| {
@@ -129,12 +142,12 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut VisualSettingsSt
         // Font family selector
         ui.horizontal(|ui| {
             ui.label("Font:");
-            
+
             if let Some(ref error) = state.font_load_error {
                 ui.colored_label(egui::Color32::RED, "⚠")
                     .on_hover_text(format!("Failed to load fonts: {}", error));
             }
-            
+
             egui::ComboBox::from_id_salt("text_font_family")
                 .selected_text(&profile.thumbnail_text_font)
                 .width(200.0)
@@ -150,7 +163,8 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut VisualSettingsSt
                     }
                 });
         });
-    });
+        }); // Close add_enabled_ui
+    }); // Close group
 
     changed
 }
