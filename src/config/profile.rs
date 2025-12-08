@@ -187,7 +187,7 @@ fn default_profiles() -> Vec<Profile> {
         thumbnail_hide_not_focused: crate::constants::defaults::behavior::HIDE_WHEN_NO_FOCUS,
         thumbnail_preserve_position_on_swap: default_preserve_thumbnail_position_on_swap(),
         client_minimize_on_switch: crate::constants::defaults::behavior::MINIMIZE_CLIENTS_ON_SWITCH,
-        hotkey_input_device: None, // Default: monitor all devices
+        hotkey_input_device: None, // Default: no device selected (hotkeys disabled)
         hotkey_cycle_forward: None, // User must configure
         hotkey_cycle_backward: None, // User must configure
         hotkey_logged_out_cycle: false, // Default: off

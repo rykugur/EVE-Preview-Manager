@@ -29,32 +29,45 @@ pub fn spawn_listener(
 ) -> Result<Vec<thread::JoinHandle<()>>> {
     let mut devices = device_detection::find_all_input_devices_with_paths()?;
 
-    if let Some(device_id) = selected_device_id {
-        info!(device_id = %device_id, "Filtering to specific input device");
+    // Handle device selection
+    match selected_device_id.as_deref() {
+        None => {
+            // No device selected - hotkeys disabled
+            info!("No input device selected, hotkey listener disabled");
+            return Ok(Vec::new());
+        }
+        Some("all") => {
+            // Listen on all devices - no filtering needed
+            info!("Listening on all input devices");
+        }
+        Some(device_id) => {
+            // Filter to specific device
+            info!(device_id = %device_id, "Filtering to specific input device");
 
-        let by_id_path = format!("/dev/input/by-id/{}", device_id);
-        let target_path = std::fs::read_link(&by_id_path)
-            .with_context(|| format!("Failed to resolve device {}", by_id_path))?;
+            let by_id_path = format!("/dev/input/by-id/{}", device_id);
+            let target_path = std::fs::read_link(&by_id_path)
+                .with_context(|| format!("Failed to resolve device {}", by_id_path))?;
 
-        let absolute_target = if target_path.is_absolute() {
-            target_path
-        } else {
-            std::path::Path::new("/dev/input/by-id").join(&target_path).canonicalize()
-                .with_context(|| format!("Failed to canonicalize {}", target_path.display()))?
-        };
-
-        info!(selected_device = %absolute_target.display(), "Resolved device path");
-
-        devices.retain(|(_, device_path)| {
-            if let Ok(canonical_device_path) = device_path.canonicalize() {
-                canonical_device_path == absolute_target
+            let absolute_target = if target_path.is_absolute() {
+                target_path
             } else {
-                false
-            }
-        });
+                std::path::Path::new("/dev/input/by-id").join(&target_path).canonicalize()
+                    .with_context(|| format!("Failed to canonicalize {}", target_path.display()))?
+            };
 
-        if devices.is_empty() {
-            anyhow::bail!("Selected device {} not found or not accessible", device_id);
+            info!(selected_device = %absolute_target.display(), "Resolved device path");
+
+            devices.retain(|(_, device_path)| {
+                if let Ok(canonical_device_path) = device_path.canonicalize() {
+                    canonical_device_path == absolute_target
+                } else {
+                    false
+                }
+            });
+
+            if devices.is_empty() {
+                anyhow::bail!("Selected device {} not found or not accessible", device_id);
+            }
         }
     }
 

@@ -179,19 +179,25 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
         ui.label("Input device to monitor:");
         ui.add_space(ITEM_SPACING / 2.0);
 
-        let selected_display = if let Some(ref device_id) = profile.hotkey_input_device {
-            state.available_devices.iter()
-                .find(|(id, _)| id == device_id)
-                .map(|(_, name)| name.clone())
-                .unwrap_or_else(|| device_id.clone())
-        } else {
-            "All Devices".to_string()
+        let selected_display = match profile.hotkey_input_device.as_deref() {
+            None => "---".to_string(),
+            Some("all") => "All Devices".to_string(),
+            Some(device_id) => {
+                state.available_devices.iter()
+                    .find(|(id, _)| id == device_id)
+                    .map(|(_, name)| name.clone())
+                    .unwrap_or_else(|| device_id.to_string())
+            }
         };
 
         egui::ComboBox::from_id_salt("hotkey_device_selector")
             .selected_text(&selected_display)
             .show_ui(ui, |ui| {
-                if ui.selectable_value(&mut profile.hotkey_input_device, None, "All Devices").clicked() {
+                if ui.selectable_value(&mut profile.hotkey_input_device, None, "---").clicked() {
+                    changed = true;
+                }
+
+                if ui.selectable_value(&mut profile.hotkey_input_device, Some("all".to_string()), "All Devices").clicked() {
                     changed = true;
                 }
 
