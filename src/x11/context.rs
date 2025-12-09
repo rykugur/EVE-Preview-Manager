@@ -32,6 +32,7 @@ pub struct CachedAtoms {
     pub net_active_window: Atom,
     pub wm_change_state: Atom,
     pub wm_state: Atom,
+    pub net_client_list: Atom,
 }
 
 impl CachedAtoms {
@@ -86,6 +87,11 @@ impl CachedAtoms {
                 .context("Failed to intern WM_STATE atom")?
                 .reply()
                 .context("Failed to get reply for WM_STATE atom")?
+                .atom,
+            net_client_list: conn.intern_atom(false, b"_NET_CLIENT_LIST")
+                .context("Failed to intern _NET_CLIENT_LIST atom")?
+                .reply()
+                .context("Failed to get reply for _NET_CLIENT_LIST atom")?
                 .atom,
         })
     }

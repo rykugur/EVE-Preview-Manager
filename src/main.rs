@@ -35,7 +35,15 @@ fn main() -> Result<()> {
 
     if cli.preview {
         // Run preview daemon (background process showing thumbnails)
-        preview::run_preview_daemon()
+        // Initialize Tokio runtime for the daemon
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to build Tokio runtime");
+
+        rt.block_on(async {
+            preview::run_preview_daemon().await
+        })
     } else {
         // Run GUI manager (default - manages preview process)
         gui::run_gui()

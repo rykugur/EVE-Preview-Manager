@@ -6,7 +6,8 @@
 
 use anyhow::{Context, Result};
 use evdev::{Device, EventType, KeyCode};
-use std::sync::{mpsc::Sender, Arc};
+use tokio::sync::mpsc::Sender;
+use std::sync::Arc;
 use std::thread;
 use tracing::{debug, error, info, warn};
 
@@ -24,7 +25,7 @@ pub enum CycleCommand {
 
 /// Spawn background threads to listen for configured hotkeys on input devices (keyboards and mice)
 pub fn spawn_listener(
-    sender: Sender<CycleCommand>,
+    sender: tokio::sync::mpsc::Sender<CycleCommand>,
     forward_key: Option<HotkeyBinding>,
     backward_key: Option<HotkeyBinding>,
     character_hotkeys: Vec<HotkeyBinding>,
@@ -226,7 +227,7 @@ fn listen_for_hotkeys(
                     binding = %fwd.display_name(),
                     "Forward hotkey pressed, sending command"
                 );
-                sender.send(CycleCommand::Forward)
+                sender.blocking_send(CycleCommand::Forward)
                     .context("Failed to send cycle command")?;
                 handled = true;
             }
@@ -238,7 +239,7 @@ fn listen_for_hotkeys(
                     binding = %bwd.display_name(),
                     "Backward hotkey pressed, sending command"
                 );
-                sender.send(CycleCommand::Backward)
+                sender.blocking_send(CycleCommand::Backward)
                     .context("Failed to send cycle command")?;
                 handled = true;
             }
@@ -251,7 +252,7 @@ fn listen_for_hotkeys(
                             binding = %char_hotkey.display_name(),
                             "Per-character hotkey pressed, sending command"
                         );
-                        sender.send(CycleCommand::CharacterHotkey(char_hotkey.clone()))
+                        sender.blocking_send(CycleCommand::CharacterHotkey(char_hotkey.clone()))
                             .context("Failed to send character hotkey command")?;
                         break; // Only send one command per keypress
                     }

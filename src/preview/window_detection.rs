@@ -19,11 +19,7 @@ pub fn check_eve_window(
     window: Window,
     state: &mut SessionState,
 ) -> Result<Option<String>> {
-    let pid_atom = ctx.conn.intern_atom(false, b"_NET_WM_PID")
-        .context("Failed to intern _NET_WM_PID atom")?
-        .reply()
-        .context("Failed to get reply for _NET_WM_PID atom")?
-        .atom;
+    let pid_atom = ctx.atoms.net_wm_pid;
     if let Ok(prop) = ctx.conn
         .get_property(false, window, pid_atom, AtomEnum::CARDINAL, 0, 1)
         .context(format!("Failed to query _NET_WM_PID property for window {}", window))?

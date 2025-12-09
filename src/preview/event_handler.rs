@@ -529,6 +529,30 @@ pub fn handle_event<'a>(
             }
             Ok(())
         }
+        Event::ConfigureNotify(event) => {
+            // Update cached position if window manager moves the thumbnail
+            if let Some(_thumbnail) = eves.get_mut(&event.window) {
+                // WARNING: Do NOT update current_position from ConfigureNotify events.
+                // Depending on the WM and window type (override-redirect), coordinates might be
+                // relative to a parent frame (e.g. 0,0) instead of absolute root coordinates.
+                // Since we manage position explicitly via reposition(), we trust our own state
+                // more than these events for hit-testing.
+                /*
+                // Only update if position actually changed
+                if thumbnail.current_position.x != event.x || thumbnail.current_position.y != event.y {
+                    trace!(
+                        old_x = thumbnail.current_position.x,
+                        old_y = thumbnail.current_position.y,
+                        new_x = event.x,
+                        new_y = event.y,
+                        "Updating cached position from ConfigureNotify"
+                    );
+                    thumbnail.current_position = Position::new(event.x, event.y);
+                }
+                */
+            }
+            Ok(())
+        }
         _ => Ok(()),
     }
 }

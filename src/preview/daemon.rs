@@ -2,9 +2,9 @@
 
 use anyhow::{Context, Result};
 use std::collections::HashMap;
-use std::sync::mpsc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
+use std::os::fd::AsRawFd;
+use tokio::io::unix::AsyncFd;
+use tokio::sync::mpsc;
 use tracing::{debug, error, info, warn};
 use x11rb::connection::Connection;
 use x11rb::protocol::damage::ConnectionExt as DamageExt;
@@ -27,11 +27,7 @@ fn get_eves<'a>(
     daemon_config: &mut DaemonConfig,
     state: &mut SessionState,
 ) -> Result<HashMap<Window, Thumbnail<'a>>> {
-    let net_client_list = ctx.conn.intern_atom(false, b"_NET_CLIENT_LIST")
-        .context("Failed to intern _NET_CLIENT_LIST atom")?
-        .reply()
-        .context("Failed to get reply for _NET_CLIENT_LIST atom")?
-        .atom;
+    let net_client_list = ctx.atoms.net_client_list;
     let prop = ctx.conn
         .get_property(
             false,
@@ -87,7 +83,7 @@ fn get_eves<'a>(
     Ok(eves)
 }
 
-pub fn run_preview_daemon() -> Result<()> {
+pub async fn run_preview_daemon() -> Result<()> {
     // Connect to X11 first to get screen dimensions for smart config defaults
     let (conn, screen_num) = x11rb::connect(None)
         .context("Failed to connect to X11 server. Is DISPLAY set correctly?")?;
@@ -100,19 +96,10 @@ pub fn run_preview_daemon() -> Result<()> {
     );
 
     // Set up signal handler for manual save trigger (SIGUSR1)
-    let save_requested = Arc::new(AtomicBool::new(false));
-    let save_flag = save_requested.clone();
-    
-    #[cfg(target_os = "linux")]
-    {
-        use signal_hook::consts::SIGUSR1;
-        use signal_hook::flag as signal_flag;
-        
-        // Register SIGUSR1 to set the atomic flag
-        signal_flag::register(SIGUSR1, save_flag)
-            .context("Failed to register SIGUSR1 handler")?;
-        info!("Registered SIGUSR1 handler for manual position save");
-    }
+    // We use tokio::signal::unix for async signal handling on Linux
+    let mut sigusr1 = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::user_defined1())
+        .context("Failed to register SIGUSR1 handler")?;
+    info!("Registered SIGUSR1 handler for manual position save");
 
     // Load config with screen-aware defaults
     let mut daemon_config = DaemonConfig::load_with_screen(
@@ -132,7 +119,7 @@ pub fn run_preview_daemon() -> Result<()> {
     let mut cycle_state = CycleState::new(daemon_config.profile.hotkey_cycle_group.clone());
     
     // Create channel for hotkey thread → main loop
-    let (hotkey_tx, hotkey_rx) = mpsc::channel();
+    let (hotkey_tx, mut hotkey_rx) = mpsc::channel(32);
 
     // Build character hotkey list from character_hotkeys HashMap, using cycle group order
     let character_hotkeys: Vec<_> = daemon_config.profile.hotkey_cycle_group
@@ -300,237 +287,15 @@ pub fn run_preview_daemon() -> Result<()> {
         }
     }
     
-    info!("Preview daemon running");
-    
+    info!("Preview daemon running (async)");
+
+    // Wrap X11 connection in AsyncFd for async polling
+    // This allows us to wake up exactly when X11 has data, without busy polling
+    let x11_fd = AsyncFd::new(conn.stream().as_raw_fd())
+        .context("Failed to create AsyncFd for X11 connection")?;
+
     loop {
-        // Check if manual save was requested via SIGUSR1
-        if save_requested.load(Ordering::Relaxed) {
-            save_requested.store(false, Ordering::Relaxed);
-            info!("Manual save requested via SIGUSR1");
-            
-            // Save current positions to disk
-            if let Err(e) = daemon_config.save() {
-                error!(error = ?e, "Failed to save positions after SIGUSR1");
-            } else {
-                info!("Positions saved successfully");
-            }
-        }
-        
-        // Check for hotkey commands (with small timeout to avoid busy-waiting)
-        // Use recv_timeout instead of try_recv to efficiently wait for hotkeys
-        // while still processing X11 events when they arrive
-        match hotkey_rx.recv_timeout(std::time::Duration::from_millis(10)) {
-            Ok(command) => {
-                // Check if we should only allow hotkeys when EVE window is focused
-                let should_process = if daemon_config.profile.hotkey_require_eve_focus {
-                    crate::x11::is_eve_window_focused(&conn, screen, &atoms)
-                        .inspect_err(|e| error!(error = %e, "Failed to check focused window"))
-                        .unwrap_or(false)
-                } else {
-                    true
-                };
-                
-                if should_process {
-                info!(command = ?command, "Received hotkey command");
-                
-                // Debug: log the actual binding details for per-character hotkeys
-                if let CycleCommand::CharacterHotkey(ref binding) = command {
-                    debug!(
-                        key_code = binding.key_code,
-                        ctrl = binding.ctrl,
-                        shift = binding.shift,
-                        alt = binding.alt,
-                        super_key = binding.super_key,
-                        devices = ?binding.source_devices,
-                        "Character hotkey binding details"
-                    );
-                }
-
-                // Build logged-out map if feature is enabled in profile
-                let logged_out_map = if daemon_config.profile.hotkey_logged_out_cycle {
-                    Some(&session_state.window_last_character)
-                } else {
-                    None
-                };
-
-                let result = match command {
-                    CycleCommand::Forward => cycle_state.cycle_forward(logged_out_map),
-                    CycleCommand::Backward => cycle_state.cycle_backward(logged_out_map),
-                    CycleCommand::CharacterHotkey(ref binding) => {
-                        debug!(
-                            binding = %binding.display_name(),
-                            "Received per-character hotkey command"
-                        );
-
-                        // Find the group of characters sharing this hotkey
-                        if let Some(char_group) = hotkey_groups.get(binding) {
-                            debug!(
-                                binding = %binding.display_name(),
-                                group = ?char_group,
-                                "Found hotkey group"
-                            );
-                            if char_group.is_empty() {
-                                warn!(binding = %binding.display_name(), "Character hotkey group is empty");
-                                None
-                            } else if char_group.len() == 1 {
-                                // Single character - direct activation
-                                let char_name = &char_group[0];
-                                cycle_state.activate_character(char_name, logged_out_map)
-                            } else {
-                                // Multiple characters share this hotkey - find next one in cycle order
-                                // Start from the character AFTER the current cycle position
-                                let current_cycle_pos = cycle_state.current_position();
-                                let current_char = daemon_config.profile.hotkey_cycle_group.get(current_cycle_pos);
-                                
-                                debug!(
-                                    binding = %binding.display_name(),
-                                    current_index = current_cycle_pos,
-                                    current_character = ?current_char,
-                                    "Starting multi-character hotkey search"
-                                );
-                                
-                                // Find all characters in this hotkey group with their positions in the cycle order
-                                let mut group_with_positions: Vec<(usize, &String)> = char_group
-                                    .iter()
-                                    .filter_map(|char_name| {
-                                        daemon_config.profile.hotkey_cycle_group
-                                            .iter()
-                                            .position(|c| c == char_name)
-                                            .map(|pos| (pos, char_name))
-                                    })
-                                    .collect();
-                                
-                                // Sort by position in cycle order
-                                group_with_positions.sort_by_key(|(pos, _)| *pos);
-                                
-                                debug!(
-                                    binding = %binding.display_name(),
-                                    group_positions = ?group_with_positions,
-                                    "Hotkey group characters with positions"
-                                );
-                                
-                                // Find the first character after current position (wrapping around)
-                                let start_search_pos = (current_cycle_pos + 1) % daemon_config.profile.hotkey_cycle_group.len();
-                                
-                                let mut result = None;
-                                
-                                // Try characters starting from after current position
-                                for (pos, char_name) in &group_with_positions {
-                                    if *pos >= start_search_pos
-                                        && let Some(activation_result) = cycle_state.activate_character(char_name, logged_out_map) {
-                                            info!(
-                                                binding = %binding.display_name(),
-                                                character = %char_name,
-                                                group_size = char_group.len(),
-                                                "Per-character hotkey activation (forward from current position)"
-                                            );
-                                            result = Some(activation_result);
-                                            break;
-                                        }
-                                }
-                                
-                                // If nothing found after current position, wrap around and check from beginning
-                                if result.is_none() {
-                                    for (pos, char_name) in &group_with_positions {
-                                        if *pos < start_search_pos
-                                            && let Some(activation_result) = cycle_state.activate_character(char_name, logged_out_map) {
-                                                info!(
-                                                    binding = %binding.display_name(),
-                                                    character = %char_name,
-                                                    group_size = char_group.len(),
-                                                    "Per-character hotkey activation (wrapped around)"
-                                                );
-                                                result = Some(activation_result);
-                                                break;
-                                            }
-                                    }
-                                }
-
-                                if result.is_none() {
-                                    warn!(
-                                        binding = %binding.display_name(),
-                                        group_size = char_group.len(),
-                                        "No active windows in character hotkey group"
-                                    );
-                                }
-
-                                result
-                            }
-                        } else {
-                            warn!(
-                                binding = %binding.display_name(),
-                                available_groups = hotkey_groups.len(),
-                                "Character hotkey binding not found in groups - this shouldn't happen!"
-                            );
-                            // Debug: log all available groups for comparison
-                            for available_binding in hotkey_groups.keys() {
-                                debug!(
-                                    available = %available_binding.display_name(),
-                                    matches = (available_binding == binding),
-                                    "Available hotkey group"
-                                );
-                            }
-                            None
-                        }
-                    }
-                };
-
-                if let Some((window, character_name)) = result {
-                    let display_name = if character_name.is_empty() {
-                        eve::LOGGED_OUT_DISPLAY_NAME
-                    } else {
-                        character_name
-                    };
-                    info!(
-                        window = window,
-                        character = %display_name,
-                        "Activating window via hotkey"
-                    );
-                    
-                    // Debug: log window ID before activation attempt
-                    debug!(
-                        window_id = window,
-                        window_hex = format!("0x{:x}", window),
-                        "About to call activate_window"
-                    );
-                    
-                    if let Err(e) = activate_window(&conn, screen, &atoms, window) {
-                        error!(window = window, error = %e, "Failed to activate window");
-                    } else {
-                        debug!(window = window, "activate_window completed successfully");
-                        
-                        if daemon_config.profile.client_minimize_on_switch {
-                            // Minimize all other EVE clients after successful activation
-                            let other_windows: Vec<Window> = eves
-                                .keys()
-                                .copied()
-                                .filter(|w| *w != window)
-                                .collect();
-                            for other_window in other_windows {
-                                if let Err(e) = minimize_window(&conn, screen, &atoms, other_window) {
-                                    debug!(window = other_window, error = %e, "Failed to minimize window via hotkey");
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    warn!(active_windows = cycle_state.config_order().len(), "No window to activate, cycle state is empty");
-                }
-            } else {
-                info!(hotkey_require_eve_focus = daemon_config.profile.hotkey_require_eve_focus, "Hotkey ignored, EVE window not focused (hotkey_require_eve_focus enabled)");
-            }
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
-                // No hotkey received within timeout - this is normal, continue to X11 events
-            }
-            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
-                warn!("Hotkey channel disconnected, hotkeys will no longer work");
-            }
-        }
-
-        // Process any pending X11 events (non-blocking)
-        // With recv_timeout above, we wake up every 10ms to check for X11 events
-        // This ensures responsive event handling even when thumbnails are disabled
+        // Ensure ALL pending X11 events are processed before sleeping
         while let Some(event) = conn.poll_for_event()
             .context("Failed to poll for X11 event")? {
             let _ = handle_event(
@@ -541,6 +306,209 @@ pub fn run_preview_daemon() -> Result<()> {
                 &mut session_state,
                 &mut cycle_state,
             ).inspect_err(|err| error!(error = ?err, "Event handling error"));
+        }
+
+        // Flush any pending requests to X server
+        let _ = conn.flush();
+
+        tokio::select! {
+             // 1. Handle SIGUSR1 (Manual Save)
+            _ = sigusr1.recv() => {
+                info!("Manual save requested via SIGUSR1");
+                if let Err(e) = daemon_config.save() {
+                    error!(error = ?e, "Failed to save positions after SIGUSR1");
+                } else {
+                    info!("Positions saved successfully");
+                }
+            }
+
+            // 2. Handle Hotkey Commands
+            Some(command) = hotkey_rx.recv() => {
+                 // Check if we should only allow hotkeys when EVE window is focused
+                let should_process = if daemon_config.profile.hotkey_require_eve_focus {
+                    crate::x11::is_eve_window_focused(&conn, screen, &atoms)
+                        .inspect_err(|e| error!(error = %e, "Failed to check focused window"))
+                        .unwrap_or(false)
+                } else {
+                    true
+                };
+                
+                if should_process {
+                    info!(command = ?command, "Received hotkey command");
+                    
+                    // Debug: log the actual binding details for per-character hotkeys
+                    if let CycleCommand::CharacterHotkey(ref binding) = command {
+                        debug!(
+                            key_code = binding.key_code,
+                            ctrl = binding.ctrl,
+                            shift = binding.shift,
+                            alt = binding.alt,
+                            super_key = binding.super_key,
+                            devices = ?binding.source_devices,
+                            "Character hotkey binding details"
+                        );
+                    }
+
+                    // Build logged-out map if feature is enabled in profile
+                    let logged_out_map = if daemon_config.profile.hotkey_logged_out_cycle {
+                        Some(&session_state.window_last_character)
+                    } else {
+                        None
+                    };
+
+                    let result = match command {
+                        CycleCommand::Forward => cycle_state.cycle_forward(logged_out_map),
+                        CycleCommand::Backward => cycle_state.cycle_backward(logged_out_map),
+                        CycleCommand::CharacterHotkey(ref binding) => {
+                            debug!(
+                                binding = %binding.display_name(),
+                                "Received per-character hotkey command"
+                            );
+
+                            // Find the group of characters sharing this hotkey
+                            if let Some(char_group) = hotkey_groups.get(binding) {
+                                debug!(
+                                    binding = %binding.display_name(),
+                                    group = ?char_group,
+                                    "Found hotkey group"
+                                );
+                                if char_group.is_empty() {
+                                    warn!(binding = %binding.display_name(), "Character hotkey group is empty");
+                                    None
+                                } else if char_group.len() == 1 {
+                                    // Single character - direct activation
+                                    let char_name = &char_group[0];
+                                    cycle_state.activate_character(char_name, logged_out_map)
+                                } else {
+                                    // Multiple characters share this hotkey - find next one in cycle order
+                                    // Start from the character AFTER the current cycle position
+                                    let current_cycle_pos = cycle_state.current_position();
+                                    
+                                    debug!(
+                                        binding = %binding.display_name(),
+                                        current_index = current_cycle_pos,
+                                        "Starting multi-character hotkey search"
+                                    );
+                                    
+                                    // Find all characters in this hotkey group with their positions in the cycle order
+                                    let mut group_with_positions: Vec<(usize, &String)> = char_group
+                                        .iter()
+                                        .filter_map(|char_name| {
+                                            daemon_config.profile.hotkey_cycle_group
+                                                .iter()
+                                                .position(|c| c == char_name)
+                                                .map(|pos| (pos, char_name))
+                                        })
+                                        .collect();
+                                    
+                                    // Sort by position in cycle order
+                                    group_with_positions.sort_by_key(|(pos, _)| *pos);
+                                    
+                                    // Find the first character after current position (wrapping around)
+                                    let start_search_pos = (current_cycle_pos + 1) % daemon_config.profile.hotkey_cycle_group.len();
+                                    
+                                    let mut result = None;
+                                    
+                                    // Try characters starting from after current position
+                                    for (pos, char_name) in &group_with_positions {
+                                        if *pos >= start_search_pos
+                                            && let Some(activation_result) = cycle_state.activate_character(char_name, logged_out_map) {
+                                                info!(
+                                                    binding = %binding.display_name(),
+                                                    character = %char_name,
+                                                    group_size = char_group.len(),
+                                                    "Per-character hotkey activation (forward from current position)"
+                                                );
+                                                result = Some(activation_result);
+                                                break;
+                                            }
+                                    }
+                                    
+                                    // If nothing found after current position, wrap around and check from beginning
+                                    if result.is_none() {
+                                        for (pos, char_name) in &group_with_positions {
+                                            if *pos < start_search_pos
+                                                && let Some(activation_result) = cycle_state.activate_character(char_name, logged_out_map) {
+                                                    info!(
+                                                        binding = %binding.display_name(),
+                                                        character = %char_name,
+                                                        group_size = char_group.len(),
+                                                        "Per-character hotkey activation (wrapped around)"
+                                                    );
+                                                    result = Some(activation_result);
+                                                    break;
+                                                }
+                                        }
+                                    }
+
+                                    if result.is_none() {
+                                        warn!(
+                                            binding = %binding.display_name(),
+                                            group_size = char_group.len(),
+                                            "No active windows in character hotkey group"
+                                        );
+                                    }
+
+                                    result
+                                }
+                            } else {
+                                warn!(
+                                    binding = %binding.display_name(),
+                                    available_groups = hotkey_groups.len(),
+                                    "Character hotkey binding not found in groups - this shouldn't happen!"
+                                );
+                                None
+                            }
+                        }
+                    };
+
+                    if let Some((window, character_name)) = result {
+                        let display_name = if character_name.is_empty() {
+                            eve::LOGGED_OUT_DISPLAY_NAME
+                        } else {
+                            character_name
+                        };
+                        info!(
+                            window = window,
+                            character = %display_name,
+                            "Activating window via hotkey"
+                        );
+                        
+                        if let Err(e) = activate_window(&conn, screen, &atoms, window) {
+                            error!(window = window, error = %e, "Failed to activate window");
+                        } else {
+                            debug!(window = window, "activate_window completed successfully");
+                            
+                            if daemon_config.profile.client_minimize_on_switch {
+                                // Minimize all other EVE clients after successful activation
+                                let other_windows: Vec<Window> = eves
+                                    .keys()
+                                    .copied()
+                                    .filter(|w| *w != window)
+                                    .collect();
+                                for other_window in other_windows {
+                                    if let Err(e) = minimize_window(&conn, screen, &atoms, other_window) {
+                                        debug!(window = other_window, error = %e, "Failed to minimize window via hotkey");
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        warn!(active_windows = cycle_state.config_order().len(), "No window to activate, cycle state is empty");
+                    }
+                } else {
+                    info!(hotkey_require_eve_focus = daemon_config.profile.hotkey_require_eve_focus, "Hotkey ignored, EVE window not focused (hotkey_require_eve_focus enabled)");
+                }
+            }
+
+            // 3. Handle X11 Events Check
+            // Wait for X11 connection to be readable (meaning an event is available)
+            // This is level-triggered
+            _ = x11_fd.readable() => {
+                // When readable, we loop at the top of 'loop' to poll events
+                // Just continue here effectively falls through to loop top
+                continue;
+            }
         }
     }
 }

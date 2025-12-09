@@ -24,7 +24,7 @@ clap = { version = "4.5", features = ["derive"] }
 eframe = { version = "0.33.2", default-features = false, features = ["glow", "wayland", "x11"] }
 egui = "0.33.2"
 ksni = "0.3"  # System tray via D-Bus StatusNotifier
-tokio = { version = "1.28", features = ["rt", "macros", "sync"] }  # Async runtime for ksni
+tokio = { version = "1.28", features = ["rt", "macros", "sync", "signal"] }  # Async runtime for ksni
 png = "0.18.0"  # PNG decoding for tray icon
 
 [target.'cfg(unix)'.dependencies]
