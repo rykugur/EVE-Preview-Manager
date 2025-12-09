@@ -278,8 +278,10 @@ async fn run_event_loop(
                     };
 
                     let result = match command {
-                        CycleCommand::Forward => resources.cycle.cycle_forward(logged_out_map),
-                        CycleCommand::Backward => resources.cycle.cycle_backward(logged_out_map),
+                        CycleCommand::Forward => resources.cycle.cycle_forward(logged_out_map)
+                            .map(|(w, s)| (w, s.to_string())),
+                        CycleCommand::Backward => resources.cycle.cycle_backward(logged_out_map)
+                            .map(|(w, s)| (w, s.to_string())),
                         CycleCommand::CharacterHotkey(ref binding) => {
                             debug!(
                                 binding = %binding.display_name(),
@@ -293,85 +295,9 @@ async fn run_event_loop(
                                     group = ?char_group,
                                     "Found hotkey group"
                                 );
-                                if char_group.is_empty() {
-                                    warn!(binding = %binding.display_name(), "Character hotkey group is empty");
-                                    None
-                                } else if char_group.len() == 1 {
-                                    // Single character - direct activation
-                                    let char_name = &char_group[0];
-                                    resources.cycle.activate_character(char_name, logged_out_map)
-                                } else {
-                                    // Multiple characters share this hotkey - find next one in cycle order
-                                    // Start from the character AFTER the current cycle position
-                                    let current_cycle_pos = resources.cycle.current_position();
-                                    
-                                    debug!(
-                                        binding = %binding.display_name(),
-                                        current_index = current_cycle_pos,
-                                        "Starting multi-character hotkey search"
-                                    );
-                                    
-                                    // Find all characters in this hotkey group with their positions in the cycle order
-                                    let mut group_with_positions: Vec<(usize, &String)> = char_group
-                                        .iter()
-                                        .filter_map(|char_name| {
-                                            resources.config.profile.hotkey_cycle_group
-                                                .iter()
-                                                .position(|c| c == char_name)
-                                                .map(|pos| (pos, char_name))
-                                        })
-                                        .collect();
-                                    
-                                    // Sort by position in cycle order
-                                    group_with_positions.sort_by_key(|(pos, _)| *pos);
-                                    
-                                    // Find the first character after current position (wrapping around)
-                                    let start_search_pos = (current_cycle_pos + 1) % resources.config.profile.hotkey_cycle_group.len();
-                                    
-                                    let mut result = None;
-                                    
-                                    // Try characters starting from after current position
-                                    for (pos, char_name) in &group_with_positions {
-                                        if *pos >= start_search_pos
-                                            && let Some(activation_result) = resources.cycle.activate_character(char_name, logged_out_map) {
-                                                info!(
-                                                    binding = %binding.display_name(),
-                                                    character = %char_name,
-                                                    group_size = char_group.len(),
-                                                    "Per-character hotkey activation (forward from current position)"
-                                                );
-                                                result = Some(activation_result);
-                                                break;
-                                            }
-                                    }
-                                    
-                                    // If nothing found after current position, wrap around and check from beginning
-                                    if result.is_none() {
-                                        for (pos, char_name) in &group_with_positions {
-                                            if *pos < start_search_pos
-                                                && let Some(activation_result) = resources.cycle.activate_character(char_name, logged_out_map) {
-                                                    info!(
-                                                        binding = %binding.display_name(),
-                                                        character = %char_name,
-                                                        group_size = char_group.len(),
-                                                        "Per-character hotkey activation (wrapped around)"
-                                                    );
-                                                    result = Some(activation_result);
-                                                    break;
-                                                }
-                                        }
-                                    }
-
-                                    if result.is_none() {
-                                        warn!(
-                                            binding = %binding.display_name(),
-                                            group_size = char_group.len(),
-                                            "No active windows in character hotkey group"
-                                        );
-                                    }
-
-                                    result
-                                }
+                                
+                                // Delegate logic to CycleState
+                                resources.cycle.activate_next_in_group(char_group, logged_out_map)
                             } else {
                                 warn!(
                                     binding = %binding.display_name(),
@@ -387,7 +313,7 @@ async fn run_event_loop(
                         let display_name = if character_name.is_empty() {
                             eve::LOGGED_OUT_DISPLAY_NAME
                         } else {
-                            character_name
+                            &character_name
                         };
                         info!(
                             window = window,
