@@ -39,6 +39,46 @@ pub fn is_window_eve(conn: &RustConnection, window: Window, atoms: &CachedAtoms)
     })
 }
 
+/// Get the WM_CLASS property of a window (returns the second string, which is the class name)
+pub fn get_window_class(conn: &RustConnection, window: Window, atoms: &CachedAtoms) -> Result<Option<String>> {
+    let cookie = conn
+        .get_property(false, window, atoms.wm_class, AtomEnum::STRING, 0, 1024)
+        .context(format!("Failed to query WM_CLASS property for window {}", window))?;
+        
+    let prop = match cookie.reply() {
+        Ok(reply) => reply,
+        Err(ReplyError::X11Error(err)) if err.error_kind == x11rb::protocol::ErrorKind::Window => {
+            debug!(window = window, "Window destroyed before WM_CLASS reply, skipping");
+            return Ok(None);
+        }
+        Err(err) => return Err(err).context(format!("Failed to get WM_CLASS reply for window {}", window)),
+    };
+
+    if prop.value.is_empty() {
+        return Ok(None);
+    }
+
+    // WM_CLASS contains two null-terminated strings: <instance_name>\0<class_name>\0
+    // We're usually interested in the second one (class name)
+    let null_byte = 0;
+    let parts: Vec<&[u8]> = prop.value.split(|&x| x == null_byte).collect();
+    
+    // If we have at least 2 parts, use the second one (Class Name)
+    // If we only have 1 part (or the second is empty), use the first one
+    let class_bytes = if parts.len() >= 2 && !parts[1].is_empty() {
+        parts[1]
+    } else {
+        parts[0]
+    };
+    
+    Ok(Some(String::from_utf8_lossy(class_bytes).into_owned()))
+}
+
+/// Check if the window class matches known EVE identifiers
+pub fn is_eve_window_class(class_name: &str) -> bool {
+    eve::WINDOW_CLASSES.contains(&class_name)
+}
+
 /// Check whether the given EVE client window is currently minimized/iconified
 pub fn is_window_minimized(
     conn: &RustConnection,

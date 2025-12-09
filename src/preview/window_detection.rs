@@ -1,13 +1,13 @@
 //! EVE window detection and thumbnail creation logic
 
 use anyhow::{Context, Result};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 use x11rb::protocol::xproto::*;
 
 use crate::config::DaemonConfig;
 use crate::constants::{self, paths, wine};
 use crate::types::Dimensions;
-use crate::x11::{is_window_eve, is_window_minimized, AppContext};
+use crate::x11::{is_window_eve, is_window_minimized, get_window_class, is_eve_window_class, AppContext};
 
 use super::session_state::SessionState;
 use super::thumbnail::Thumbnail;
@@ -19,6 +19,19 @@ pub fn check_eve_window(
     window: Window,
     state: &mut SessionState,
 ) -> Result<Option<String>> {
+    // 1. Check WM_CLASS first (fastest and most reliable if set correctly)
+    if let Ok(Some(class_name)) = get_window_class(ctx.conn, window, ctx.atoms) {
+        if is_eve_window_class(&class_name) {
+             debug!(window = window, class = %class_name, "Identified EVE window by WM_CLASS");
+             // Proceed to final verification
+        } else {
+             // If WM_CLASS is set but definitely not EVE, we might return early?
+             // But some users might have weird wrappers, so we fallback to PID check if it's 'wine' or generic.
+             // For now, if it's not in our list, we continue to PID check
+             debug!(window = window, class = %class_name, "WM_CLASS did not match known EVE identifiers, checking PID");
+        }
+    }
+
     let pid_atom = ctx.atoms.net_wm_pid;
     if let Ok(prop) = ctx.conn
         .get_property(false, window, pid_atom, AtomEnum::CARDINAL, 0, 1)
@@ -34,26 +47,17 @@ pub fn check_eve_window(
                 return Ok(None);
             }
             
-            if !std::fs::read_link(paths::PROC_EXE_FORMAT.replace("{}", &pid.to_string()))
-                .map(|x| {
-                    x.to_string_lossy().contains(wine::WINE64_PRELOADER)
-                        || x.to_string_lossy().contains(wine::WINE_PRELOADER)
-                })
-                .inspect_err(|e| {
-                    error!(
-                        pid = pid,
-                        error = ?e,
-                        "Cannot read /proc/{pid}/exe, assuming wine process"
-                    );
-                })
-                .unwrap_or(true)
-            {
+            // 2. Process Inspection
+            if !is_wine_process(pid) {
+                // Not a wine process, check if WM_CLASS matched. If not, it's likely not EVE.
+                // However, the original code ONLY checked for wine process.
+                // So if it's not Wine, we skip.
                 return Ok(None);
             }
         } else {
             warn!(
                 window = window,
-                "_NET_WM_PID not set, assuming wine process"
+                "_NET_WM_PID not set, assuming wine process (fallback)"
             );
         }
     }
@@ -151,4 +155,61 @@ pub fn check_and_create_window<'a>(
         "Created thumbnail for EVE window"
     );
     Ok(Some(thumbnail))
+}
+
+/// Check if a process is running under Wine/Proton
+/// Checks /proc/{pid}/exe, /proc/{pid}/cmdline, and /proc/{pid}/environ
+fn is_wine_process(pid: u32) -> bool {
+    let pid_str = pid.to_string();
+    
+    // 1. Check executable name (readlink /proc/{pid}/exe)
+    if let Ok(path) = std::fs::read_link(paths::PROC_EXE_FORMAT.replace("{}", &pid_str)) {
+        let path_str = path.to_string_lossy();
+        if wine::WINE_PROCESS_NAMES.iter().any(|name| path_str.contains(name)) {
+            return true;
+        }
+        // Also check if it's exefile.exe directly (custom wine builds might expose it)
+        if path_str.ends_with(wine::EVE_EXE_NAME) {
+            return true;
+        }
+    } else {
+        // If we can't read exe (EPERM), assume it might be Wine if other checks pass
+        // or just default to true like the original code (brittle, but safer for now)
+        // Original code: inspect_err -> unwrap_or(true)
+        // We defer to other checks.
+        debug!(pid = pid, "Cannot read /proc/{pid}/exe, trying other checks");
+    }
+
+    // 2. Check command line arguments for EVE executable name
+    if let Ok(mut cmdline_file) = std::fs::File::open(format!("/proc/{}/cmdline", pid)) {
+        let mut cmdline = String::new();
+        // Ignoring errors reading cmdline
+        if std::io::Read::read_to_string(&mut cmdline_file, &mut cmdline).is_ok() {
+             if cmdline.contains(wine::EVE_EXE_NAME) {
+                 return true;
+             }
+        }
+    }
+
+    // 3. Check environment variables for Wine/Proton markers
+    // This requires reading /proc/{pid}/environ which are null-delimited strings
+    if let Ok(mut environ_file) = std::fs::File::open(format!("/proc/{}/environ", pid)) {
+        let mut environ_data = Vec::new();
+        if std::io::Read::read_to_end(&mut environ_file, &mut environ_data).is_ok() {
+            // Very basic check: search for variable names
+             for var in wine::WINE_ENV_VARS {
+                 // Search for byte sequence "VAR="
+                 let needle = format!("{}=", var);
+                 // We can do a string search on the whole block since it's UTF-8ish
+                 // or just bytes check. 
+                 // Simple approach: efficient byte search
+                 #[allow(clippy::manual_contains)] // rust versions vary
+                 if String::from_utf8_lossy(&environ_data).contains(&needle) {
+                     return true;
+                 }
+             }
+        }
+    }
+
+    false
 }

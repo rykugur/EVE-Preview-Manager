@@ -13,4 +13,6 @@ pub use window::{
     is_window_eve,
     is_window_minimized,
     minimize_window,
+    get_window_class,
+    is_eve_window_class,
 };
