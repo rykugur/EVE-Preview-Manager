@@ -59,10 +59,10 @@ jobs:
       
     - name: Get Version
       id: version
-      run: echo "VERSION=$(grep -m1 'version =' Cargo.toml | cut -d '"' -f2)" >> $GITHUB_ENV
+      run: echo "version=$(grep -m1 'version =' Cargo.toml | cut -d '"' -f2)" >> $GITHUB_OUTPUT
 
     - name: Upload Binary
       uses: actions/upload-artifact@v4
       with:
-        name: eve-preview-manager-v${{ env.VERSION }}
+        name: eve-preview-manager-v${{ steps.version.outputs.version }}
         path: target/release/eve-preview-manager
