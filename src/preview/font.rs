@@ -161,7 +161,8 @@ pub fn find_font_path(font_name: &str) -> Result<PathBuf> {
     Ok(path)
 }
 
-/// Select the best available default TrueType font
+/// Scans for a suitable default TrueType font from a hardcoded list of preferred fonts.
+/// Returns the first match found on the system.
 pub fn select_best_default_font() -> Result<(String, PathBuf)> {
     let candidates = crate::constants::defaults::text::FONT_CANDIDATES;
 
@@ -295,6 +296,37 @@ impl FontRenderer {
                 Ok(Self::X11Fallback { font_id, size })
             }
         }
+    }
+
+    /// Resolve font from configuration or fallback to system default
+    pub fn resolve_from_config<C: Connection>(
+        conn: &C,
+        font_name: &str,
+        font_size: f32,
+    ) -> Result<Self> {
+        if !font_name.is_empty() {
+            info!(
+                configured_font = %font_name,
+                size = font_size,
+                "Attempting to load user-configured font"
+            );
+            Self::from_font_name(font_name, font_size)
+                .or_else(|e| {
+                    warn!(
+                        font = %font_name,
+                        error = ?e,
+                        "Failed to load configured font, falling back to system default"
+                    );
+                    Self::from_system_font(conn, font_size)
+                })
+        } else {
+            info!(
+                size = font_size,
+                "No font configured, using system default"
+            );
+            Self::from_system_font(conn, font_size)
+        }
+        .context(format!("Failed to initialize font renderer with size {}", font_size))
     }
 
     pub fn requires_direct_rendering(&self) -> bool {

@@ -41,6 +41,7 @@ pub struct Thumbnail<'a> {
     
     // === Geometry (public, immutable after creation) ===
     pub dimensions: Dimensions,
+    pub current_position: Position, // Cached position for hit testing
     
     // === X11 Window Handles (private/public owned resources) ===
     pub window: Window,      // Our thumbnail window (public for event handling)
@@ -266,8 +267,8 @@ impl<'a> Thumbnail<'a> {
         // Create window and setup properties
         let window = Self::create_window(ctx, &character_name, x, y, dimensions)?;
         
-        // Setup a cleanup guard that destroys the window if we fail during initialization
-        // This prevents leaking the window if later steps fail
+        // RAII guard to automatically destroy the window if initialization fails partially
+        // This ensures we don't leak orphaned windows if we error out before returning the valid Thumbnail struct
         struct WindowGuard<'a> {
             conn: &'a RustConnection,
             window: Window,
@@ -316,6 +317,7 @@ impl<'a> Thumbnail<'a> {
             
             // Geometry
             dimensions,
+            current_position: Position::new(x, y),
             
             // X11 Window Handles
             window,
@@ -658,6 +660,10 @@ impl<'a> Thumbnail<'a> {
             &ConfigureWindowAux::new().x(x as i32).y(y as i32),
         )
         .context(format!("Failed to reposition window for '{}' to ({}, {})", self.character_name, x, y))?;
+        
+        // Update cached position
+        self.current_position = Position::new(x, y);
+        
         self.conn.flush()
             .context("Failed to flush X11 connection after reposition")?;
         Ok(())
@@ -678,16 +684,11 @@ impl<'a> Thumbnail<'a> {
     }
 
     pub fn is_hovered(&self, x: i16, y: i16) -> bool {
-        // Query actual window geometry to avoid desync when compositor moves window
-        if let Ok(req) = self.conn.get_geometry(self.window)
-            && let Ok(geom) = req.reply()
-        {
-            return x >= geom.x
-                && x <= geom.x + geom.width as i16
-                && y >= geom.y
-                && y <= geom.y + geom.height as i16;
-        }
-        false
+        // Use cached position to avoid synchronous X11 roundtrip
+        x >= self.current_position.x
+            && x <= self.current_position.x + self.dimensions.width as i16
+            && y >= self.current_position.y
+            && y <= self.current_position.y + self.dimensions.height as i16
     }
 }
 

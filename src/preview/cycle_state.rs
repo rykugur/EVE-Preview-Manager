@@ -35,7 +35,8 @@ impl CycleState {
         self.active_windows
             .insert(character_name.clone(), window);
 
-        // Only characters in cycle_group can be cycled via hotkeys
+        // Note: Only characters listed in the profile's `cycle_group` will be included in the cycle order.
+        // We track all windows here, but `cycle_forward/backward` logic filters internally based on the config.
     }
 
     /// Remove window (called from DestroyNotify)
@@ -214,6 +215,16 @@ impl CycleState {
         }
     }
 
+    /// Set current cycle position based on focused window
+    /// Returns true if window was found and state updated
+    pub fn set_current_by_window(&mut self, window: Window) -> bool {
+        if let Some((character_name, _)) = self.active_windows.iter().find(|&(_, &w)| w == window) {
+            let character_name = character_name.clone();
+            return self.set_current(&character_name);
+        }
+        false
+    }
+
     /// Clamp index to valid range after removing characters
     fn clamp_index(&mut self) {
         if !self.config_order.is_empty() && self.current_index >= self.config_order.len() {
@@ -226,9 +237,52 @@ impl CycleState {
         &self.config_order
     }
 
-    /// Get current cycle position (index in config_order)
-    pub fn current_position(&self) -> usize {
-        self.current_index
+    /// Cycles to the next available character within a specific subgroup of characters.
+    /// Used for shared hotkeys (e.g. F1 bound to both CharA and CharB) to toggle between them.
+    /// The cycle order respects the global configuration order to ensure consistent behavior.
+    pub fn activate_next_in_group(&mut self, group: &[String], logged_out_map: Option<&HashMap<Window, String>>) -> Option<(Window, String)> {
+        // 1. Filter group to include only characters present in config_order
+        //    and map them to their global indices
+        let mut group_indices: Vec<(usize, &String)> = group.iter()
+            .filter_map(|name| {
+                self.config_order.iter()
+                    .position(|c| c == name)
+                    .map(|idx| (idx, name))
+            })
+            .collect();
+
+        if group_indices.is_empty() {
+             debug!("No characters from hotkey group found in config order");
+             return None;
+        }
+
+        // 2. Sort by global index to ensure we follow cycle order
+        group_indices.sort_by_key(|(idx, _)| *idx);
+
+        // 3. Find search start position
+        let current_pos = self.current_index;
+        
+        // 4. Search forward: find the first available character in the group after the current position
+        for (idx, name) in &group_indices {
+            if *idx > current_pos 
+                && let Some((window, _)) = self.activate_character(name, logged_out_map) {
+                    debug!(character = %name, "Activated next in group (forward)");
+                    return Some((window, name.to_string()));
+            }
+        }
+
+        // 5. Wrap around: Search from beginning of the list
+        // Since we filtered internally and sorted, the first available character 
+        // in the group will be the correct wrap-around target.
+        for (_, name) in &group_indices {
+             if let Some((window, _)) = self.activate_character(name, logged_out_map) {
+                debug!(character = %name, "Activated next in group (wrapped)");
+                return Some((window, name.to_string()));
+            }
+        }
+
+        debug!("No active characters found in hotkey group");
+        None
     }
 }
 
@@ -298,6 +352,31 @@ mod tests {
         // Should skip "Inactive" in cycle
         assert_eq!(state.cycle_forward(None), Some((300, "Active2"))); // Active1 → Active2
         assert_eq!(state.cycle_forward(None), Some((100, "Active1"))); // Active2 → Active1 (wrap, skip Inactive)
+    }
+    #[test]
+    fn test_activate_next_in_group() {
+        let mut state = CycleState::new(vec![
+            "A".to_string(), // 0
+            "B".to_string(), // 1
+            "C".to_string(), // 2
+            "D".to_string(), // 3
+        ]);
+        
+        state.add_window("A".to_string(), 100);
+        state.add_window("C".to_string(), 300);
+        
+        let group = vec!["A".to_string(), "C".to_string()];
+        
+        // Start at 0 (A)
+        // Next in group should be C (index 2)
+        let res = state.activate_next_in_group(&group, None);
+        assert_eq!(res, Some((300, "C".to_string())));
+        assert_eq!(state.current_index, 2); // State should update to C
+        
+        // Next in group should be A (index 0) - wrapping
+        let res = state.activate_next_in_group(&group, None);
+        assert_eq!(res, Some((100, "A".to_string())));
+        assert_eq!(state.current_index, 0);
     }
 
     #[test]

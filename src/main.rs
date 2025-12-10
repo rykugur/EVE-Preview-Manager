@@ -16,6 +16,7 @@ use tracing_subscriber::FmtSubscriber;
 
 #[derive(Parser)]
 #[command(name = "eve-preview-manager")]
+#[command(version)]
 #[command(about = "EVE Online window preview manager", long_about = None)]
 struct Cli {
     /// Run in preview daemon mode (background process showing thumbnails)
@@ -34,10 +35,18 @@ fn main() -> Result<()> {
     let cli = Cli::parse();
 
     if cli.preview {
-        // Run preview daemon (background process showing thumbnails)
-        preview::run_preview_daemon()
+        // Start the dedicated preview process to isolate X11 rendering and overlay management
+        // Initialize Tokio runtime for the daemon
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to build Tokio runtime");
+
+        rt.block_on(async {
+            preview::run_preview_daemon().await
+        })
     } else {
-        // Run GUI manager (default - manages preview process)
+        // Default mode: launch the configuration GUI which manages the daemon lifecycle
         gui::run_gui()
     }
 }

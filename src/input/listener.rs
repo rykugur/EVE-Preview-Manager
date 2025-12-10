@@ -6,7 +6,8 @@
 
 use anyhow::{Context, Result};
 use evdev::{Device, EventType, KeyCode};
-use std::sync::{mpsc::Sender, Arc};
+use tokio::sync::mpsc::Sender;
+use std::sync::Arc;
 use std::thread;
 use tracing::{debug, error, info, warn};
 
@@ -18,13 +19,13 @@ use crate::input::device_detection;
 pub enum CycleCommand {
     Forward,
     Backward,
-    /// Per-character hotkey pressed - includes the binding for cycle group lookup
+    /// Triggered when a character-specific hotkey is pressed, carrying its binding configuration for context
     CharacterHotkey(HotkeyBinding),
 }
 
-/// Spawn background threads to listen for configured hotkeys on input devices (keyboards and mice)
+/// Initializes and manages background threads for low-latency input event monitoring across multiple devices
 pub fn spawn_listener(
-    sender: Sender<CycleCommand>,
+    sender: tokio::sync::mpsc::Sender<CycleCommand>,
     forward_key: Option<HotkeyBinding>,
     backward_key: Option<HotkeyBinding>,
     character_hotkeys: Vec<HotkeyBinding>,
@@ -50,7 +51,7 @@ pub fn spawn_listener(
             info!("Listening on all input devices");
         }
         Some("auto") => {
-            // Auto-detect mode: use devices from the hotkey bindings
+            // Use devices associated with the configured hotkey bindings
             info!("Auto-detect mode: using devices from hotkey bindings");
 
             // Collect all unique device IDs from all bindings (cycle + per-character)
@@ -83,7 +84,7 @@ pub fn spawn_listener(
             }
         }
         Some(device_id) => {
-            // Legacy: specific device ID (from old configs)
+            // Legacy: specific device ID (compatibility for old configs)
             info!(device_id = %device_id, "Filtering to specific input device (legacy)");
 
             let by_id_path = format!("/dev/input/by-id/{}", device_id);
@@ -159,7 +160,7 @@ pub fn spawn_listener(
     Ok(handles)
 }
 
-/// Listen for configured hotkey events on a single device
+/// Event loop processing raw input events from a single device, handling key presses and state tracking
 fn listen_for_hotkeys(
     mut device: Device,
     sender: Sender<CycleCommand>,
@@ -226,7 +227,7 @@ fn listen_for_hotkeys(
                     binding = %fwd.display_name(),
                     "Forward hotkey pressed, sending command"
                 );
-                sender.send(CycleCommand::Forward)
+                sender.blocking_send(CycleCommand::Forward)
                     .context("Failed to send cycle command")?;
                 handled = true;
             }
@@ -238,7 +239,7 @@ fn listen_for_hotkeys(
                     binding = %bwd.display_name(),
                     "Backward hotkey pressed, sending command"
                 );
-                sender.send(CycleCommand::Backward)
+                sender.blocking_send(CycleCommand::Backward)
                     .context("Failed to send cycle command")?;
                 handled = true;
             }
@@ -251,7 +252,7 @@ fn listen_for_hotkeys(
                             binding = %char_hotkey.display_name(),
                             "Per-character hotkey pressed, sending command"
                         );
-                        sender.send(CycleCommand::CharacterHotkey(char_hotkey.clone()))
+                        sender.blocking_send(CycleCommand::CharacterHotkey(char_hotkey.clone()))
                             .context("Failed to send character hotkey command")?;
                         break; // Only send one command per keypress
                     }

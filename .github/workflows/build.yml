@@ -10,54 +10,59 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  check:
+    name: Check & Lint
     runs-on: ubuntu-latest
-    
     steps:
     - uses: actions/checkout@v4
-      with:
-        fetch-depth: 2
     
-    - name: Install dependencies
+    - name: Install Dependencies
       run: |
         sudo apt-get update
         sudo apt-get install -y pkg-config libfontconfig1-dev libdbus-1-dev \
           libx11-dev libxext-dev libxrender-dev libxrandr-dev libxcomposite-dev \
           libxdamage-dev libxfixes-dev libxkbcommon-dev libwayland-dev \
           libegl1-mesa-dev libgl1-mesa-dev
+
+    - name: Setup Rust Cache
+      uses: Swatinem/rust-cache@v2
+
+    - name: Check Formatting
+      run: cargo fmt --check
+      
+    - name: Clippy Lint
+      run: cargo clippy -- -D warnings
+
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    needs: check
+    steps:
+    - uses: actions/checkout@v4
     
-    - name: Check if version changed
-      id: version_check
+    - name: Install Dependencies
       run: |
-        # Extract version from current commit
-        CURR_VERSION=$(grep '^version' Cargo.toml | head -n 1 | cut -d '"' -f2)
+        sudo apt-get update
+        sudo apt-get install -y pkg-config libfontconfig1-dev libdbus-1-dev \
+          libx11-dev libxext-dev libxrender-dev libxrandr-dev libxcomposite-dev \
+          libxdamage-dev libxfixes-dev libxkbcommon-dev libwayland-dev \
+          libegl1-mesa-dev libgl1-mesa-dev
 
-        # Extract version from previous commit (if file existed)
-        PREV_VERSION=$(git show HEAD~1:Cargo.toml 2>/dev/null | grep '^version' | head -n 1 | cut -d '"' -f2)
-
-        echo "Current: $CURR_VERSION"
-        echo "Previous: $PREV_VERSION"
-
-        if [ "$CURR_VERSION" = "$PREV_VERSION" ]; then
-          echo "changed=false" >> $GITHUB_OUTPUT
-        else
-          echo "changed=true" >> $GITHUB_OUTPUT
-        fi
-        
-        echo "current=$CURR_VERSION" >> $GITHUB_OUTPUT
-        echo "Version changed? ${{ steps.version_check.outputs.changed }}"
-    
-    - name: Build
-      # if: steps.version_check.outputs.changed == 'true'
+    - name: Setup Rust Cache
+      uses: Swatinem/rust-cache@v2
+      
+    - name: Build (Release)
       run: cargo build --release --verbose
-    
-    - name: Run tests
-      # if: steps.version_check.outputs.changed == 'true'
+      
+    - name: Run Tests
       run: cargo test --verbose
-    
-    - name: Upload binary
-      # if: steps.version_check.outputs.changed == 'true'
+      
+    - name: Get Version
+      id: version
+      run: echo "version=$(grep -m1 'version =' Cargo.toml | cut -d '"' -f2)" >> $GITHUB_OUTPUT
+
+    - name: Upload Binary
       uses: actions/upload-artifact@v4
       with:
-        name: eve-preview-manager-v${{ steps.version_check.outputs.current }}
+        name: eve-preview-manager-v${{ steps.version.outputs.version }}
         path: target/release/eve-preview-manager

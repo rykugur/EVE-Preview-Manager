@@ -32,6 +32,7 @@ pub struct CachedAtoms {
     pub net_active_window: Atom,
     pub wm_change_state: Atom,
     pub wm_state: Atom,
+    pub net_client_list: Atom,
 }
 
 impl CachedAtoms {
@@ -87,6 +88,11 @@ impl CachedAtoms {
                 .reply()
                 .context("Failed to get reply for WM_STATE atom")?
                 .atom,
+            net_client_list: conn.intern_atom(false, b"_NET_CLIENT_LIST")
+                .context("Failed to intern _NET_CLIENT_LIST atom")?
+                .reply()
+                .context("Failed to get reply for _NET_CLIENT_LIST atom")?
+                .atom,
         })
     }
 }
@@ -121,7 +127,7 @@ impl CachedFormats {
     }
 }
 
-/// Convert floating point to X11 fixed-point format
+/// Converts standard float values to the 16.16 fixed-point format required by the X11 Render extension
 pub fn to_fixed(v: f32) -> Fixed {
     (v * fixed_point::MULTIPLIER).round() as Fixed
 }
