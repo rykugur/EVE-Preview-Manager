@@ -37,6 +37,8 @@ This project is under active development and should be working. It's primarily d
    - **Add Characters**: Click the "Add" button to include EVE characters in your cycle group. Active and previously detected clients will appear in the popup.
    - **Manual Entry**: Alternatively, switch to "Text Editor" mode to manually paste a list of character names (one per line).
    - **Individual Hotkeys**: Once added to the cycle group, you can bind specific hotkeys to individual characters for direct access.
+6. **Save & Apply**: Click "Save & Apply" to save your current configuration and refresh the previews.
+7. **Swap Profiles**: Swapping profiles can be done quickly by right-clicking the system tray icon and selecting the desired profile.
 
 **Note**: Configuration is stored in `~/.config/eve-preview-manager/config.json`.
 
