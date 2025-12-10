@@ -232,19 +232,16 @@ impl ManagerApp {
             });
         });
 
-
         let selected_profile_idx = config
             .profiles
             .iter()
             .position(|p| p.profile_name == config.global.selected_profile)
             .unwrap_or(0);
 
-
         let behavior_settings_state =
             components::behavior_settings::BehaviorSettingsState::default();
         let hotkey_settings_state = components::hotkey_settings::HotkeySettingsState::default();
         let visual_settings_state = components::visual_settings::VisualSettingsState::default();
-
 
         let mut cycle_order_settings_state =
             components::cycle_order_settings::CycleOrderSettingsState::default();
@@ -470,7 +467,9 @@ impl ManagerApp {
                 {
                     // Add any new characters from disk that GUI doesn't know about
                     for (char_name, char_settings) in &disk_profile.character_thumbnails {
-                        if !gui_profile.character_thumbnails.contains_key(char_name) && !char_name.is_empty() {
+                        if !gui_profile.character_thumbnails.contains_key(char_name)
+                            && !char_name.is_empty()
+                        {
                             gui_profile
                                 .character_thumbnails
                                 .insert(char_name.clone(), *char_settings);

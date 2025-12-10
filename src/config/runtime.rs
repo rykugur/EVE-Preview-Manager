@@ -147,14 +147,13 @@ impl DaemonConfig {
             .position(|p| p.profile_name == selected_name)
             .unwrap_or(0);
 
-
         let profile_positions = &mut profile_config.profiles[profile_idx].character_thumbnails;
         for (char_name, char_settings) in &self.character_thumbnails {
             if !char_name.is_empty() {
                 profile_positions.insert(char_name.clone(), *char_settings);
             }
         }
-        
+
         // Explicitly remove any empty key that might have been loaded from a corrupt config
         // Sanitize ALL profiles to ensure the config file is clean globally
         for profile in &mut profile_config.profiles {
@@ -351,13 +350,13 @@ mod tests {
     #[test]
     fn test_save_filters_empty_keys_logic() {
         let mut state = test_config(75, 3, "#FF00FF00", 10, 20, "#FFFFFFFF", false, 15);
-        
+
         // 1. Verify handle_character_change doesn't insert empty old_name
-        let _ = state.handle_character_change("", "NewChar", Position::new(0,0), 100, 100);
+        let _ = state.handle_character_change("", "NewChar", Position::new(0, 0), 100, 100);
         assert!(!state.character_thumbnails.contains_key(""));
-        
+
         // 2. Verify it doesn't try to look up empty new_name
-        let _ = state.handle_character_change("OldChar", "", Position::new(0,0), 100, 100);
+        let _ = state.handle_character_change("OldChar", "", Position::new(0, 0), 100, 100);
         assert!(!state.character_thumbnails.contains_key(""));
     }
 }

@@ -446,7 +446,7 @@ impl FontRenderer {
                                 let b = (fg_b * coverage) / 255;
 
                                 let idx = ((py as usize) * width + (px as usize)) * 4;
-                                
+
                                 // Write BGRA directly (Little Endian)
                                 data[idx] = b as u8;
                                 data[idx + 1] = g as u8;
@@ -496,7 +496,7 @@ mod tests {
             ("Noto Sans", Some("Bold Italic"))
         );
     }
-    
+
     #[test]
     fn test_find_common_fonts() {
         let test_families = vec!["DejaVu Sans", "Liberation Sans", "Monospace"];
