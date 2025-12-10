@@ -418,10 +418,10 @@ impl FontRenderer {
                 let mut data = vec![0u8; width * height * 4];
 
                 // Pre-calculate color components
-                let fg_a = ((fg_color >> 24) & 0xFF) as u32;
-                let fg_r = ((fg_color >> 16) & 0xFF) as u32;
-                let fg_g = ((fg_color >> 8) & 0xFF) as u32;
-                let fg_b = (fg_color & 0xFF) as u32;
+                let fg_a = (fg_color >> 24) & 0xFF;
+                let fg_r = (fg_color >> 16) & 0xFF;
+                let fg_g = (fg_color >> 8) & 0xFF;
+                let fg_b = fg_color & 0xFF;
 
                 for (x_offset, metrics, bitmap) in glyphs {
                     let baseline_y = max_ascent - (metrics.height as i32 + metrics.ymin);
