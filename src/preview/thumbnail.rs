@@ -672,6 +672,7 @@ impl<'a> Thumbnail<'a> {
 
             if rendered.width > 0 && rendered.height > 0 {
                 // Upload rendered text bitmap to X11
+                // rendered.data is already in BGRA format (Little Endian ARGB)
                 let text_pixmap = self
                     .conn
                     .generate_id()
@@ -689,15 +690,6 @@ impl<'a> Thumbnail<'a> {
                         self.character_name
                     ))?;
 
-                // Convert Vec<u32> ARGB to bytes in X11 native format (little-endian BGRA)
-                let mut image_data = Vec::with_capacity(rendered.data.len() * 4);
-                for pixel in &rendered.data {
-                    image_data.push(*pixel as u8); // B
-                    image_data.push((pixel >> 8) as u8); // G
-                    image_data.push((pixel >> 16) as u8); // R
-                    image_data.push((pixel >> 24) as u8); // A
-                }
-
                 self.conn
                     .put_image(
                         ImageFormat::Z_PIXMAP,
@@ -709,7 +701,7 @@ impl<'a> Thumbnail<'a> {
                         0,
                         0,
                         x11::ARGB_DEPTH,
-                        &image_data,
+                        &rendered.data,
                     )
                     .context(format!(
                         "Failed to upload text image for '{}'",

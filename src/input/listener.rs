@@ -32,14 +32,18 @@ pub fn spawn_listener(
     selected_device_id: Option<String>,
 ) -> Result<Vec<thread::JoinHandle<()>>> {
     // Get all device paths for cross-device modifier state queries
-    let all_device_paths: Vec<_> = device_detection::find_all_input_devices_with_paths()?
-        .into_iter()
-        .map(|(_dev, path)| path)
+    let devices = device_detection::find_all_input_devices_with_paths()?;
+    
+    // Create shared list of paths for cross-device queries
+    let all_device_paths: Vec<_> = devices
+        .iter()
+        .map(|(_dev, path)| path.clone())
         .collect();
 
-    let mut devices = device_detection::find_all_input_devices_with_paths()?;
 
-    // Handle device selection
+    let mut devices = devices;
+
+
     match selected_device_id.as_deref() {
         None => {
             // No device selected - hotkeys disabled
@@ -54,7 +58,7 @@ pub fn spawn_listener(
             // Use devices associated with the configured hotkey bindings
             info!("Auto-detect mode: using devices from hotkey bindings");
 
-            // Collect all unique device IDs from all bindings (cycle + per-character)
+
             let mut required_devices = std::collections::HashSet::new();
             if let Some(ref fwd) = forward_key {
                 required_devices.extend(fwd.source_devices.iter().cloned());

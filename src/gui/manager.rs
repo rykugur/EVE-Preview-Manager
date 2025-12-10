@@ -190,7 +190,7 @@ struct ManagerApp {
 }
 
 impl ManagerApp {
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+    fn new(_cc: &eframe::CreationContext<'_>, config: Config) -> Self {
         info!("Initializing egui manager");
 
         // Create channel for tray icon commands
@@ -232,23 +232,20 @@ impl ManagerApp {
             });
         });
 
-        // Load configuration
-        let config = Config::load().unwrap_or_default();
 
-        // Find selected profile index
         let selected_profile_idx = config
             .profiles
             .iter()
             .position(|p| p.profile_name == config.global.selected_profile)
             .unwrap_or(0);
 
-        // Initialize component states
+
         let behavior_settings_state =
             components::behavior_settings::BehaviorSettingsState::default();
         let hotkey_settings_state = components::hotkey_settings::HotkeySettingsState::default();
         let visual_settings_state = components::visual_settings::VisualSettingsState::default();
 
-        // Initialize cycle order settings state with current profile
+
         let mut cycle_order_settings_state =
             components::cycle_order_settings::CycleOrderSettingsState::default();
         cycle_order_settings_state.load_from_profile(&config.profiles[selected_profile_idx]);
@@ -375,8 +372,9 @@ impl ManagerApp {
                         // Character exists in both: keep GUI dimensions, use disk position (x, y)
                         gui_settings.x = disk_settings.x;
                         gui_settings.y = disk_settings.y;
-                    } else {
+                    } else if !char_name.is_empty() {
                         // Character only in disk (daemon added it): preserve it completely
+                        // But skip empty keys to clean up formatted/bad config
                         merged_profile
                             .character_thumbnails
                             .insert(char_name.clone(), *disk_settings);
@@ -472,7 +470,7 @@ impl ManagerApp {
                 {
                     // Add any new characters from disk that GUI doesn't know about
                     for (char_name, char_settings) in &disk_profile.character_thumbnails {
-                        if !gui_profile.character_thumbnails.contains_key(char_name) {
+                        if !gui_profile.character_thumbnails.contains_key(char_name) && !char_name.is_empty() {
                             gui_profile
                                 .character_thumbnails
                                 .insert(char_name.clone(), *char_settings);
@@ -572,7 +570,6 @@ impl ManagerApp {
     }
 
     fn render_unified_settings(&mut self, ui: &mut egui::Ui) {
-        // Row 1: Profile dropdown group + Save/Discard buttons
         let mut action = ui
             .horizontal(|ui| {
                 // Profile dropdown group
@@ -609,7 +606,8 @@ impl ManagerApp {
 
         ui.add_space(ITEM_SPACING);
 
-        // Row 2: Profile management buttons on left, status text on right
+        ui.add_space(ITEM_SPACING);
+
         ui.horizontal(|ui| {
             self.profile_selector
                 .render_buttons(ui, &self.config, self.selected_profile_idx);
@@ -675,7 +673,8 @@ impl ManagerApp {
         ui.separator();
         ui.add_space(SECTION_SPACING);
 
-        // 3-column layout: Behavior Settings | Visual+Hotkey Settings | Character Cycle Order
+        ui.add_space(SECTION_SPACING);
+
         let current_profile = &mut self.config.profiles[self.selected_profile_idx];
 
         ui.columns(3, |columns| {
@@ -752,7 +751,6 @@ impl eframe::App for ManagerApp {
         }
 
         // Request repaint after short delay to poll for tray events even when unfocused
-        // Request repaint after short delay to poll for tray events even when unfocused
         // This ensures tray menu actions are processed promptly without burning CPU in a tight loop
         ctx.request_repaint_after(std::time::Duration::from_millis(100));
 
@@ -763,7 +761,6 @@ impl eframe::App for ManagerApp {
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
-            // Slim status bar at top
             ui.horizontal(|ui| {
                 ui.colored_label(self.daemon_status.color(), self.daemon_status.label());
                 if let Some(child) = &self.daemon {
@@ -778,7 +775,8 @@ impl eframe::App for ManagerApp {
             ui.separator();
             ui.add_space(SECTION_SPACING);
 
-            // Unified Settings Content (3-column layout)
+            ui.add_space(SECTION_SPACING);
+
             egui::ScrollArea::vertical().show(ui, |ui| {
                 self.render_unified_settings(ui);
             });
@@ -948,7 +946,7 @@ pub fn run_gui() -> Result<()> {
     eframe::run_native(
         &format!("EVE Preview Manager - v{}", env!("CARGO_PKG_VERSION")),
         options,
-        Box::new(|cc| Ok(Box::new(ManagerApp::new(cc)))),
+        Box::new(|cc| Ok(Box::new(ManagerApp::new(cc, config)))),
     )
     .map_err(|err| anyhow!("Failed to launch egui manager: {err}"))
 }
