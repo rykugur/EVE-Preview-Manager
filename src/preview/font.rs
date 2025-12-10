@@ -55,6 +55,28 @@ const KNOWN_STYLES: &[&str] = &[
     "Expanded",
 ];
 
+/// Helper to parse a font string into family and optional style.
+///
+/// Example: "Open Sans Condensed Bold" -> ("Open Sans", Some("Condensed Bold"))
+fn parse_font_name(font_name: &str) -> (&str, Option<&str>) {
+    for style in KNOWN_STYLES {
+        if let Some(style_pos) = font_name.rfind(style) {
+            // Check if style is at the end of the string
+            if style_pos + style.len() == font_name.len() {
+                let prefix = &font_name[..style_pos];
+                // Check if the prefix implies a valid separation (empty or ends with space)
+                if prefix.is_empty() || prefix.ends_with(' ') {
+                    let family_name = prefix.trim();
+                    if !family_name.is_empty() {
+                        return (family_name, Some(style));
+                    }
+                }
+            }
+        }
+    }
+    (font_name, None)
+}
+
 /// Get list of all individual fonts with their full names
 pub fn list_fonts() -> Result<Vec<String>> {
     info!("Loading available fonts from fontconfig...");
@@ -92,26 +114,15 @@ pub fn list_fonts() -> Result<Vec<String>> {
 pub fn find_font_path(font_name: &str) -> Result<PathBuf> {
     let fc = Fontconfig::new().context("Failed to initialize fontconfig")?;
 
-    let mut family_name = font_name;
-    let mut style_name: Option<&str> = None;
+    let (family_name, style_name) = parse_font_name(font_name);
 
-    for style in KNOWN_STYLES {
-        if let Some(style_pos) = font_name.rfind(style)
-            && style_pos + style.len() == font_name.len()
-        {
-            let prefix = &font_name[..style_pos];
-            if prefix.is_empty() || prefix.ends_with(' ') {
-                family_name = prefix.trim();
-                style_name = Some(style);
-                debug!(
-                    font = font_name,
-                    family = family_name,
-                    style = style,
-                    "Parsed font into family and style"
-                );
-                break;
-            }
-        }
+    if style_name.is_some() {
+        debug!(
+            font = font_name,
+            family = family_name,
+            style = ?style_name,
+            "Parsed font into family and style"
+        );
     }
 
     let mut pattern = Pattern::new(&fc);
@@ -231,11 +242,12 @@ pub fn select_best_default_font() -> Result<(String, PathBuf)> {
 // Font Rendering
 // ============================================================================
 
-/// Rendered text as ARGB bitmap
+/// Rendered text as BGRA bitmap (optimized for X11)
 pub struct RenderedText {
     pub width: usize,
     pub height: usize,
-    pub data: Vec<u32>,
+    /// Little-endian ARGB (BGRA in memory): Blue, Green, Red, Alpha
+    pub data: Vec<u8>,
 }
 
 /// Font renderer with TrueType (fontdue) or X11 core font fallback
@@ -364,7 +376,7 @@ impl FontRenderer {
         }
     }
 
-    /// Render text to an ARGB bitmap
+    /// Render text to a BGRA bitmap (X11 optimized)
     pub fn render_text(&self, text: &str, fg_color: u32) -> Result<RenderedText> {
         match self {
             Self::Fontdue { font, size } => {
@@ -402,12 +414,14 @@ impl FontRenderer {
                     });
                 }
 
-                let mut data = vec![0x00000000; width * height];
+                // Allocate buffer for BGRA data (4 bytes per pixel)
+                let mut data = vec![0u8; width * height * 4];
 
-                let fg_a = ((fg_color >> 24) & 0xFF) as f32 / 255.0;
-                let fg_r = ((fg_color >> 16) & 0xFF) as f32 / 255.0;
-                let fg_g = ((fg_color >> 8) & 0xFF) as f32 / 255.0;
-                let fg_b = (fg_color & 0xFF) as f32 / 255.0;
+                // Pre-calculate color components
+                let fg_a = ((fg_color >> 24) & 0xFF) as u32;
+                let fg_r = ((fg_color >> 16) & 0xFF) as u32;
+                let fg_g = ((fg_color >> 8) & 0xFF) as u32;
+                let fg_b = (fg_color & 0xFF) as u32;
 
                 for (x_offset, metrics, bitmap) in glyphs {
                     let baseline_y = max_ascent - (metrics.height as i32 + metrics.ymin);
@@ -421,16 +435,23 @@ impl FontRenderer {
                                 continue;
                             }
 
-                            let coverage = bitmap[gy * metrics.width + gx] as f32 / 255.0;
+                            let coverage = bitmap[gy * metrics.width + gx] as u32;
 
-                            if coverage > 0.0 {
-                                let alpha = (fg_a * coverage * 255.0) as u32;
-                                let r = (fg_r * coverage * 255.0) as u32;
-                                let g = (fg_g * coverage * 255.0) as u32;
-                                let b = (fg_b * coverage * 255.0) as u32;
+                            if coverage > 0 {
+                                // Integer math for performance
+                                // pixel = color * coverage / 255
+                                let alpha = (fg_a * coverage) / 255;
+                                let r = (fg_r * coverage) / 255;
+                                let g = (fg_g * coverage) / 255;
+                                let b = (fg_b * coverage) / 255;
 
-                                let pixel = (alpha << 24) | (r << 16) | (g << 8) | b;
-                                data[(py as usize) * width + (px as usize)] = pixel;
+                                let idx = ((py as usize) * width + (px as usize)) * 4;
+                                
+                                // Write BGRA directly (Little Endian)
+                                data[idx] = b as u8;
+                                data[idx + 1] = g as u8;
+                                data[idx + 2] = r as u8;
+                                data[idx + 3] = alpha as u8;
                             }
                         }
                     }
@@ -455,6 +476,27 @@ impl FontRenderer {
 mod tests {
     use super::*;
 
+    #[test]
+    fn test_parse_font_name() {
+        assert_eq!(parse_font_name("Open Sans"), ("Open Sans", None));
+        assert_eq!(
+            parse_font_name("Open Sans Condensed Bold"),
+            ("Open Sans", Some("Condensed Bold"))
+        );
+        assert_eq!(
+            parse_font_name("Fira Code Regular"),
+            ("Fira Code", Some("Regular"))
+        );
+        assert_eq!(
+            parse_font_name("Roboto Condensed"),
+            ("Roboto", Some("Condensed"))
+        );
+        assert_eq!(
+            parse_font_name("Noto Sans Bold Italic"),
+            ("Noto Sans", Some("Bold Italic"))
+        );
+    }
+    
     #[test]
     fn test_find_common_fonts() {
         let test_families = vec!["DejaVu Sans", "Liberation Sans", "Monospace"];
