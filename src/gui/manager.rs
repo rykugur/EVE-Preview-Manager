@@ -603,9 +603,7 @@ impl ManagerApp {
             })
             .inner;
 
-        ui.add_space(ITEM_SPACING);
-
-        ui.add_space(ITEM_SPACING);
+        //ui.add_space(ITEM_SPACING); // Removed to reduce gap
 
         ui.horizontal(|ui| {
             self.profile_selector
@@ -668,11 +666,7 @@ impl ManagerApp {
             ProfileAction::None => {}
         }
 
-        ui.add_space(SECTION_SPACING);
         ui.separator();
-        ui.add_space(SECTION_SPACING);
-
-        ui.add_space(SECTION_SPACING);
 
         let current_profile = &mut self.config.profiles[self.selected_profile_idx];
 
@@ -772,9 +766,6 @@ impl eframe::App for ManagerApp {
             });
 
             ui.separator();
-            ui.add_space(SECTION_SPACING);
-
-            ui.add_space(SECTION_SPACING);
 
             egui::ScrollArea::vertical().show(ui, |ui| {
                 self.render_unified_settings(ui);
