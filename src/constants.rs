@@ -165,7 +165,7 @@ pub mod defaults {
         pub const WINDOW_WIDTH: u16 = 1020;
 
         /// Default GUI window height in pixels
-        pub const WINDOW_HEIGHT: u16 = 770;
+        pub const WINDOW_HEIGHT: u16 = 715;
     }
 
     /// Thumbnail window settings
