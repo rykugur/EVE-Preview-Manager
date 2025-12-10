@@ -372,8 +372,9 @@ impl ManagerApp {
                         // Character exists in both: keep GUI dimensions, use disk position (x, y)
                         gui_settings.x = disk_settings.x;
                         gui_settings.y = disk_settings.y;
-                    } else {
+                    } else if !char_name.is_empty() {
                         // Character only in disk (daemon added it): preserve it completely
+                        // But skip empty keys to clean up formatted/bad config
                         merged_profile
                             .character_thumbnails
                             .insert(char_name.clone(), *disk_settings);
@@ -469,7 +470,7 @@ impl ManagerApp {
                 {
                     // Add any new characters from disk that GUI doesn't know about
                     for (char_name, char_settings) in &disk_profile.character_thumbnails {
-                        if !gui_profile.character_thumbnails.contains_key(char_name) {
+                        if !gui_profile.character_thumbnails.contains_key(char_name) && !char_name.is_empty() {
                             gui_profile
                                 .character_thumbnails
                                 .insert(char_name.clone(), *char_settings);
