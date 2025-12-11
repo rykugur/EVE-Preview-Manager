@@ -17,8 +17,6 @@ use crate::config::profile::{Config, SaveStrategy};
 use crate::constants::gui::*;
 use crate::gui::components::profile_selector::{ProfileAction, ProfileSelector};
 
-
-
 #[cfg(target_os = "linux")]
 #[cfg(target_os = "linux")]
 struct AppTray {
@@ -27,8 +25,6 @@ struct AppTray {
 }
 
 #[cfg(target_os = "linux")]
-
-
 #[cfg(target_os = "linux")]
 impl ksni::Tray for AppTray {
     fn id(&self) -> String {
@@ -51,7 +47,8 @@ impl ksni::Tray for AppTray {
         // Lock state to get current info
         let (current_profile_idx, profile_names) = {
             if let Ok(state) = self.state.lock() {
-                let profile_names: Vec<String> = state.config
+                let profile_names: Vec<String> = state
+                    .config
                     .profiles
                     .iter()
                     .map(|p| p.profile_name.clone())
@@ -307,8 +304,7 @@ impl SharedState {
         info!(profile_idx = idx, "Profile switch requested");
 
         if idx < self.config.profiles.len() {
-            self.config.global.selected_profile =
-                self.config.profiles[idx].profile_name.clone();
+            self.config.global.selected_profile = self.config.profiles[idx].profile_name.clone();
             self.selected_profile_idx = idx;
 
             // Save config with new selection
@@ -379,11 +375,11 @@ impl SharedState {
 
                 signal::kill(Pid::from_raw(pid as i32), Signal::SIGUSR1)
                     .context("Failed to send SIGUSR1 to daemon")?;
-                 
-                 self.status_message = Some(StatusMessage {
+
+                self.status_message = Some(StatusMessage {
                     text: "Thumbnail positions saved".to_string(),
                     color: STATUS_RUNNING,
-                 });
+                });
             }
             #[cfg(not(target_os = "linux"))]
             {
@@ -428,7 +424,7 @@ impl SharedState {
 
 struct ManagerApp {
     state: Arc<Mutex<SharedState>>,
-    
+
     // UI-only state (doesn't need to be shared deeply)
     profile_selector: ProfileSelector,
     behavior_settings_state: components::behavior_settings::BehaviorSettingsState,
@@ -529,9 +525,6 @@ impl ManagerApp {
 
         app
     }
-
-
-
 
     fn render_unified_settings(&mut self, ui: &mut egui::Ui, state: &mut SharedState) {
         let mut action = ui
@@ -717,8 +710,6 @@ impl eframe::App for ManagerApp {
             state.config.global.window_width = new_width;
             state.config.global.window_height = new_height;
         }
-
-
 
         // Handle quit request from tray menu
         if state.should_quit {
