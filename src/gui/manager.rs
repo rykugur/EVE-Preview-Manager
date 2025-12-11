@@ -286,8 +286,16 @@ impl SharedState {
             .save_with_strategy(SaveStrategy::OverwriteCharacterPositions)
             .context("Failed to save configuration")?;
 
-        // Reload config to include daemon's new characters in GUI memory
-        self.config = Config::load().unwrap_or(final_config);
+        // Update in-memory config immediately (no need to reload from disk)
+        self.config = final_config;
+
+        // Re-sync selected_profile_idx with the potentially reloaded profile list
+        self.selected_profile_idx = self
+            .config
+            .profiles
+            .iter()
+            .position(|p| p.profile_name == self.config.global.selected_profile)
+            .unwrap_or(0);
 
         self.settings_changed = false;
         self.config_status_message = Some(StatusMessage {
@@ -431,6 +439,8 @@ struct ManagerApp {
     cycle_order_settings_state: components::cycle_order_settings::CycleOrderSettingsState,
     #[cfg(target_os = "linux")]
     shutdown_signal: std::sync::Arc<tokio::sync::Notify>,
+    #[cfg(target_os = "linux")]
+    update_signal: std::sync::Arc<tokio::sync::Notify>,
 }
 
 impl ManagerApp {
@@ -454,6 +464,10 @@ impl ManagerApp {
         #[cfg(target_os = "linux")]
         let shutdown_clone = shutdown_signal.clone();
         #[cfg(target_os = "linux")]
+        let update_signal = std::sync::Arc::new(tokio::sync::Notify::new());
+        #[cfg(target_os = "linux")]
+        let update_clone = update_signal.clone();
+        #[cfg(target_os = "linux")]
         let ctx = cc.egui_ctx.clone();
 
         #[cfg(target_os = "linux")]
@@ -472,11 +486,23 @@ impl ManagerApp {
                 match tray.spawn().await {
                     Ok(handle) => {
                         info!("Tray icon created via ksni/D-Bus");
-                        // We can't really "listen" to tray updates in a loop if we rely on mutex
-                        // But ksni handles events in its own loop which calls our menu callback
-                        // We only need to wait for shutdown
-                        shutdown_clone.notified().await;
-                        handle.shutdown().await;
+                        // Event loop for tray management
+                        // We use select! to handle both shutdown and update requests
+                        loop {
+                            tokio::select! {
+                                _ = shutdown_clone.notified() => {
+                                    handle.shutdown().await;
+                                    break;
+                                }
+                                _ = update_clone.notified() => {
+                                    // Trigger menu refresh
+                                    // KSNI's update method takes a closure to modify the service/icon,
+                                    // but we just need it to trigger a "PropertiesChanged" signal or similar
+                                    // to make the system tray re-read our menu structure.
+                                    handle.update(|_| {}).await;
+                                }
+                            }
+                        }
                     }
                     Err(e) => {
                         error!(error = ?e, "Failed to create tray icon (D-Bus unavailable?)");
@@ -504,6 +530,7 @@ impl ManagerApp {
         let app = Self {
             state,
             shutdown_signal,
+            update_signal,
             profile_selector: ProfileSelector::new(),
             behavior_settings_state,
             hotkey_settings_state,
@@ -551,6 +578,8 @@ impl ManagerApp {
                             });
                         } else {
                             state.reload_daemon_config();
+                            #[cfg(target_os = "linux")]
+                            self.update_signal.notify_one();
                         }
                     }
                 });
@@ -603,6 +632,8 @@ impl ManagerApp {
                     });
                 } else {
                     state.reload_daemon_config();
+                    #[cfg(target_os = "linux")]
+                    self.update_signal.notify_one();
                 }
             }
             ProfileAction::ProfileCreated
@@ -617,6 +648,8 @@ impl ManagerApp {
                     });
                 } else {
                     state.reload_daemon_config();
+                    #[cfg(target_os = "linux")]
+                    self.update_signal.notify_one();
                 }
             }
             ProfileAction::None => {}
