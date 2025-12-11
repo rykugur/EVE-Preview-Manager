@@ -18,13 +18,11 @@ use crate::constants::gui::*;
 use crate::gui::components::profile_selector::{ProfileAction, ProfileSelector};
 
 #[cfg(target_os = "linux")]
-#[cfg(target_os = "linux")]
 struct AppTray {
     state: Arc<Mutex<SharedState>>,
     ctx: egui::Context,
 }
 
-#[cfg(target_os = "linux")]
 #[cfg(target_os = "linux")]
 impl ksni::Tray for AppTray {
     fn id(&self) -> String {
@@ -732,7 +730,7 @@ impl eframe::App for ManagerApp {
             ui.separator();
 
             egui::ScrollArea::vertical().show(ui, |ui| {
-                self.render_unified_settings(ui, &mut *state);
+                self.render_unified_settings(ui, &mut state);
             });
         });
 
