@@ -1,7 +1,4 @@
-//! X11 utilities and cached state
-//!
-//! Provides helper functions for X11 window management, atom caching,
-//! and EVE Online window detection.
+//! X11 u window detection.
 
 mod context;
 mod window;

@@ -305,3 +305,5 @@ pub fn minimize_window(
         .context("Failed to flush X11 connection after window minimize")?;
     Ok(())
 }
+
+

@@ -2,7 +2,7 @@
 
 use std::io::Cursor;
 use std::process::{Child, Command};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, anyhow};
@@ -17,49 +17,17 @@ use crate::config::profile::{Config, SaveStrategy};
 use crate::constants::gui::*;
 use crate::gui::components::profile_selector::{ProfileAction, ProfileSelector};
 
-#[cfg(target_os = "linux")]
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum TrayMessage {
-    Refresh,
-    SwitchProfile(usize),
-    SavePositions,
-    Quit,
-}
+
 
 #[cfg(target_os = "linux")]
-#[derive(Debug, Clone, PartialEq, Eq)]
-enum TrayCommand {
-    Update,
-}
-
 #[cfg(target_os = "linux")]
 struct AppTray {
-    tx: std::sync::mpsc::Sender<TrayMessage>,
+    state: Arc<Mutex<SharedState>>,
+    ctx: egui::Context,
 }
 
 #[cfg(target_os = "linux")]
-impl AppTray {
-    /// Load current profile state from config file.
-    /// Called each time menu is opened to ensure up-to-date state.
-    fn load_current_state(&self) -> (usize, Vec<String>) {
-        match Config::load() {
-            Ok(config) => {
-                let profile_names: Vec<String> = config
-                    .profiles
-                    .iter()
-                    .map(|p| p.profile_name.clone())
-                    .collect();
-                let current_idx = config
-                    .profiles
-                    .iter()
-                    .position(|p| p.profile_name == config.global.selected_profile)
-                    .unwrap_or(0);
-                (current_idx, profile_names)
-            }
-            Err(_) => (0, vec!["default".to_string()]),
-        }
-    }
-}
+
 
 #[cfg(target_os = "linux")]
 impl ksni::Tray for AppTray {
@@ -80,15 +48,30 @@ impl ksni::Tray for AppTray {
     fn menu(&self) -> Vec<ksni::MenuItem<Self>> {
         use ksni::menu::*;
 
-        // Reload config to get current profile state
-        let (current_profile_idx, profile_names) = self.load_current_state();
+        // Lock state to get current info
+        let (current_profile_idx, profile_names) = {
+            if let Ok(state) = self.state.lock() {
+                let profile_names: Vec<String> = state.config
+                    .profiles
+                    .iter()
+                    .map(|p| p.profile_name.clone())
+                    .collect();
+                let idx = state.selected_profile_idx;
+                (idx, profile_names)
+            } else {
+                (0, vec!["default".to_string()])
+            }
+        };
 
         vec![
             // Refresh item
             StandardItem {
                 label: "Refresh".into(),
                 activate: Box::new(|this: &mut AppTray| {
-                    let _ = this.tx.send(TrayMessage::Refresh);
+                    if let Ok(mut state) = this.state.lock() {
+                        state.reload_daemon_config();
+                    }
+                    this.ctx.request_repaint();
                 }),
                 ..Default::default()
             }
@@ -99,7 +82,10 @@ impl ksni::Tray for AppTray {
             RadioGroup {
                 selected: current_profile_idx,
                 select: Box::new(|this: &mut AppTray, idx| {
-                    let _ = this.tx.send(TrayMessage::SwitchProfile(idx));
+                    if let Ok(mut state) = this.state.lock() {
+                        state.switch_profile(idx);
+                    }
+                    this.ctx.request_repaint();
                 }),
                 options: profile_names
                     .iter()
@@ -112,11 +98,14 @@ impl ksni::Tray for AppTray {
             .into(),
             // Separator
             MenuItem::Separator,
-            // Save Thumbnail Positions (always show - harmless when auto-save is on)
+            // Save Thumbnail Positions
             StandardItem {
                 label: "Save Thumbnail Positions".into(),
                 activate: Box::new(|this: &mut AppTray| {
-                    let _ = this.tx.send(TrayMessage::SavePositions);
+                    if let Ok(mut state) = this.state.lock() {
+                        let _ = state.save_thumbnail_positions();
+                    }
+                    this.ctx.request_repaint();
                 }),
                 ..Default::default()
             }
@@ -128,7 +117,10 @@ impl ksni::Tray for AppTray {
                 label: "Quit".into(),
                 icon_name: "application-exit".into(),
                 activate: Box::new(|this: &mut AppTray| {
-                    let _ = this.tx.send(TrayMessage::Quit);
+                    if let Ok(mut state) = this.state.lock() {
+                        state.should_quit = true;
+                    }
+                    this.ctx.request_repaint();
                 }),
                 ..Default::default()
             }
@@ -172,151 +164,38 @@ struct StatusMessage {
     color: egui::Color32,
 }
 
-struct ManagerApp {
+// Core application state shared between GUI and Tray
+struct SharedState {
+    config: Config,
     daemon: Option<Child>,
     daemon_status: DaemonStatus,
     last_health_check: Instant,
     status_message: Option<StatusMessage>,
-    #[cfg(target_os = "linux")]
-    tray_rx: Receiver<TrayMessage>,
-    #[cfg(target_os = "linux")]
-    tray_cmd_tx: tokio::sync::mpsc::Sender<TrayCommand>,
-    #[cfg(target_os = "linux")]
-    shutdown_signal: std::sync::Arc<tokio::sync::Notify>,
-    should_quit: bool,
-
-    // Configuration state with profiles
-    config: Config,
-    selected_profile_idx: usize,
-    profile_selector: ProfileSelector,
-    behavior_settings_state: components::behavior_settings::BehaviorSettingsState,
-    hotkey_settings_state: components::hotkey_settings::HotkeySettingsState,
-    visual_settings_state: components::visual_settings::VisualSettingsState,
-    cycle_order_settings_state: components::cycle_order_settings::CycleOrderSettingsState,
-    settings_changed: bool,
     config_status_message: Option<StatusMessage>,
+    settings_changed: bool,
+    selected_profile_idx: usize,
+    should_quit: bool,
 }
 
-impl ManagerApp {
-    fn new(_cc: &eframe::CreationContext<'_>, config: Config) -> Self {
-        info!("Initializing egui manager");
-
-        // Create channel for tray icon commands
-        #[cfg(target_os = "linux")]
-        let (tx_to_app, tray_rx) = mpsc::channel();
-        #[cfg(target_os = "linux")]
-        let (tray_cmd_tx, mut tray_cmd_rx) = tokio::sync::mpsc::channel(16);
-
-        // Spawn Tokio thread for ksni tray
-        #[cfg(target_os = "linux")]
-        let shutdown_signal = std::sync::Arc::new(tokio::sync::Notify::new());
-        #[cfg(target_os = "linux")]
-        let shutdown_clone = shutdown_signal.clone();
-
-        #[cfg(target_os = "linux")]
-        std::thread::spawn(move || {
-            let runtime = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("Failed to build Tokio runtime for tray");
-
-            // Run a dedicated single-threaded Tokio runtime for the tray icon
-            // This is required because `ksni` (StatusNotifierItem) relies on async D-Bus communication
-            runtime.block_on(async move {
-                let tray = AppTray { tx: tx_to_app };
-
-                match tray.spawn().await {
-                    Ok(handle) => {
-                        info!("Tray icon created via ksni/D-Bus");
-
-                        // Handle both shutdown signal and update commands
-                        loop {
-                            tokio::select! {
-                                _ = shutdown_clone.notified() => break,
-                                Some(cmd) = tray_cmd_rx.recv() => {
-                                    match cmd {
-                                        TrayCommand::Update => {
-                                            info!("Received forcing tray update command");
-                                            handle.update(|_| {}).await;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-
-                        // Gracefully shutdown tray
-                        handle.shutdown().await;
-                    }
-                    Err(e) => {
-                        error!(error = ?e, "Failed to create tray icon (D-Bus unavailable?)");
-                    }
-                }
-            });
-        });
-
+impl SharedState {
+    fn new(config: Config) -> Self {
         let selected_profile_idx = config
             .profiles
             .iter()
             .position(|p| p.profile_name == config.global.selected_profile)
             .unwrap_or(0);
 
-        let behavior_settings_state =
-            components::behavior_settings::BehaviorSettingsState::default();
-        let hotkey_settings_state = components::hotkey_settings::HotkeySettingsState::default();
-        let visual_settings_state = components::visual_settings::VisualSettingsState::default();
-
-        let mut cycle_order_settings_state =
-            components::cycle_order_settings::CycleOrderSettingsState::default();
-        cycle_order_settings_state.load_from_profile(&config.profiles[selected_profile_idx]);
-
-        #[cfg(target_os = "linux")]
-        let mut app = Self {
+        Self {
+            config,
             daemon: None,
             daemon_status: DaemonStatus::Stopped,
             last_health_check: Instant::now(),
             status_message: None,
-            tray_rx,
-            tray_cmd_tx,
-            shutdown_signal,
-            should_quit: false,
-            config,
-            selected_profile_idx,
-            profile_selector: ProfileSelector::new(),
-            behavior_settings_state,
-            hotkey_settings_state,
-            visual_settings_state,
-            cycle_order_settings_state,
-            settings_changed: false,
             config_status_message: None,
-        };
-
-        #[cfg(not(target_os = "linux"))]
-        let mut app = Self {
-            daemon: None,
-            daemon_status: DaemonStatus::Stopped,
-            last_health_check: Instant::now(),
-            status_message: None,
-            should_quit: false,
-            config,
-            selected_profile_idx,
-            profile_selector: ProfileSelector::new(),
-            behavior_settings_state,
-            hotkey_settings_state,
-            visual_settings_state,
-            cycle_order_settings_state,
             settings_changed: false,
-            config_status_message: None,
-        };
-
-        if let Err(err) = app.start_daemon() {
-            error!(error = ?err, "Failed to start preview daemon");
-            app.status_message = Some(StatusMessage {
-                text: format!("Failed to start daemon: {err}"),
-                color: STATUS_STOPPED,
-            });
+            selected_profile_idx,
+            should_quit: false,
         }
-
-        app
     }
 
     fn start_daemon(&mut self) -> Result<()> {
@@ -350,7 +229,7 @@ impl ManagerApp {
     }
 
     fn restart_daemon(&mut self) {
-        info!("Restart requested from UI");
+        info!("Restart requested");
         if let Err(err) = self.stop_daemon().and_then(|_| self.start_daemon()) {
             error!(error = ?err, "Failed to restart daemon");
             self.status_message = Some(StatusMessage {
@@ -370,9 +249,6 @@ impl ManagerApp {
         let disk_config = Config::load().unwrap_or_else(|_| self.config.clone());
 
         // Merge strategy: Start with GUI's profile list (handles deletions), merge character positions from disk
-        // This ensures that:
-        // 1. Deletions in GUI are respected (since we start with GUI state)
-        // 2. Window positions updated by the daemon (which writes to disk) are preserved
         let mut merged_profiles = Vec::new();
 
         for gui_profile in &self.config.profiles {
@@ -394,7 +270,6 @@ impl ManagerApp {
                         gui_settings.y = disk_settings.y;
                     } else if !char_name.is_empty() {
                         // Character only in disk (daemon added it): preserve it completely
-                        // But skip empty keys to clean up formatted/bad config
                         merged_profile
                             .character_thumbnails
                             .insert(char_name.clone(), *disk_settings);
@@ -428,37 +303,26 @@ impl ManagerApp {
         Ok(())
     }
 
-    fn save_thumbnail_positions(&mut self) -> Result<()> {
-        // If we have a running daemon, send SIGUSR1 signal to trigger save
-        if let Some(ref daemon) = self.daemon {
-            let pid = daemon.id();
-            info!(
-                daemon_pid = pid,
-                "Sending SIGUSR1 to daemon to save positions"
-            );
+    fn switch_profile(&mut self, idx: usize) {
+        info!(profile_idx = idx, "Profile switch requested");
 
-            #[cfg(target_os = "linux")]
-            {
-                use nix::sys::signal::{self, Signal};
-                use nix::unistd::Pid;
+        if idx < self.config.profiles.len() {
+            self.config.global.selected_profile =
+                self.config.profiles[idx].profile_name.clone();
+            self.selected_profile_idx = idx;
 
-                signal::kill(Pid::from_raw(pid as i32), Signal::SIGUSR1)
-                    .context("Failed to send SIGUSR1 to daemon")?;
-
-                info!("SIGUSR1 sent successfully");
+            // Save config with new selection
+            if let Err(err) = self.save_config() {
+                error!(error = ?err, "Failed to save config after profile switch");
+                self.status_message = Some(StatusMessage {
+                    text: format!("Profile switch failed: {err}"),
+                    color: STATUS_STOPPED,
+                });
+            } else {
+                // Reload daemon with new profile
+                self.reload_daemon_config();
             }
-
-            #[cfg(not(target_os = "linux"))]
-            {
-                anyhow::bail!("Signal-based save only supported on Linux");
-            }
-
-            return Ok(());
         }
-
-        // Fallback: no daemon running (shouldn't happen in normal use)
-        // In this case we don't have reliable position data, so just return error
-        anyhow::bail!("Cannot save positions: daemon is not running. Start the daemon first.")
     }
 
     fn discard_changes(&mut self) {
@@ -504,6 +368,33 @@ impl ManagerApp {
         }
     }
 
+    fn save_thumbnail_positions(&mut self) -> Result<()> {
+        // If we have a running daemon, send SIGUSR1 signal to trigger save
+        if let Some(ref daemon) = self.daemon {
+            let pid = daemon.id();
+            #[cfg(target_os = "linux")]
+            {
+                use nix::sys::signal::{self, Signal};
+                use nix::unistd::Pid;
+
+                signal::kill(Pid::from_raw(pid as i32), Signal::SIGUSR1)
+                    .context("Failed to send SIGUSR1 to daemon")?;
+                 
+                 self.status_message = Some(StatusMessage {
+                    text: "Thumbnail positions saved".to_string(),
+                    color: STATUS_RUNNING,
+                 });
+            }
+            #[cfg(not(target_os = "linux"))]
+            {
+                anyhow::bail!("Signal-based save only supported on Linux");
+            }
+            Ok(())
+        } else {
+            anyhow::bail!("Cannot save positions: daemon is not running")
+        }
+    }
+
     fn poll_daemon(&mut self) {
         if self.last_health_check.elapsed() < Duration::from_millis(DAEMON_CHECK_INTERVAL_MS) {
             return;
@@ -524,7 +415,6 @@ impl ManagerApp {
                 Ok(None) => {
                     if matches!(self.daemon_status, DaemonStatus::Starting) {
                         self.daemon_status = DaemonStatus::Running;
-                        // Reload config when daemon transitions to running to pick up any new characters
                         self.reload_character_list();
                     }
                 }
@@ -534,95 +424,142 @@ impl ManagerApp {
             }
         }
     }
+}
 
-    fn poll_tray_events(&mut self) {
-        #[cfg(target_os = "linux")]
-        while let Ok(msg) = self.tray_rx.try_recv() {
-            match msg {
-                TrayMessage::Refresh => {
-                    info!("Refresh requested from tray menu");
-                    self.reload_daemon_config();
-                }
-                TrayMessage::SwitchProfile(idx) => {
-                    info!(profile_idx = idx, "Profile switch requested from tray");
+struct ManagerApp {
+    state: Arc<Mutex<SharedState>>,
+    
+    // UI-only state (doesn't need to be shared deeply)
+    profile_selector: ProfileSelector,
+    behavior_settings_state: components::behavior_settings::BehaviorSettingsState,
+    hotkey_settings_state: components::hotkey_settings::HotkeySettingsState,
+    visual_settings_state: components::visual_settings::VisualSettingsState,
+    cycle_order_settings_state: components::cycle_order_settings::CycleOrderSettingsState,
+    #[cfg(target_os = "linux")]
+    shutdown_signal: std::sync::Arc<tokio::sync::Notify>,
+}
 
-                    // Update config's selected_profile field
-                    if idx < self.config.profiles.len() {
-                        self.config.global.selected_profile =
-                            self.config.profiles[idx].profile_name.clone();
-                        self.selected_profile_idx = idx;
+impl ManagerApp {
+    fn new(cc: &eframe::CreationContext<'_>, config: Config) -> Self {
+        info!("Initializing egui manager");
 
-                        // Clear any pending selection in the GUI profile selector
-                        self.profile_selector.clear_pending();
-
-                        // Save config with new selection
-                        if let Err(err) = self.save_config() {
-                            error!(error = ?err, "Failed to save config after profile switch");
-                            self.status_message = Some(StatusMessage {
-                                text: format!("Profile switch failed: {err}"),
-                                color: STATUS_STOPPED,
-                            });
-                        } else {
-                            // Reload daemon with new profile
-                            self.reload_daemon_config();
-
-                            // Force tray menu update to reflect new selection
-                            if let Err(e) = self.tray_cmd_tx.try_send(TrayCommand::Update) {
-                                warn!("Failed to send tray update command: {}", e);
-                            }
-                        }
-                    }
-                }
-                TrayMessage::SavePositions => {
-                    info!("Save positions requested from tray menu");
-                    if let Err(err) = self.save_thumbnail_positions() {
-                        error!(error = ?err, "Failed to save thumbnail positions");
-                        self.status_message = Some(StatusMessage {
-                            text: format!("Failed to save positions: {err}"),
-                            color: STATUS_STOPPED,
-                        });
-                    } else {
-                        self.status_message = Some(StatusMessage {
-                            text: "Thumbnail positions saved".to_string(),
-                            color: STATUS_RUNNING,
-                        });
-                    }
-                }
-                TrayMessage::Quit => {
-                    info!("Quit requested from tray menu");
-                    self.should_quit = true;
-                }
-            }
+        // Initialize SharedState
+        let mut state = SharedState::new(config.clone());
+        if let Err(err) = state.start_daemon() {
+            error!(error = ?err, "Failed to start preview daemon");
+            state.status_message = Some(StatusMessage {
+                text: format!("Failed to start daemon: {err}"),
+                color: STATUS_STOPPED,
+            });
         }
+        let state = Arc::new(Mutex::new(state));
+        let state_clone = state.clone();
+
+        #[cfg(target_os = "linux")]
+        let shutdown_signal = std::sync::Arc::new(tokio::sync::Notify::new());
+        #[cfg(target_os = "linux")]
+        let shutdown_clone = shutdown_signal.clone();
+        #[cfg(target_os = "linux")]
+        let ctx = cc.egui_ctx.clone();
+
+        #[cfg(target_os = "linux")]
+        std::thread::spawn(move || {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to build Tokio runtime for tray");
+
+            runtime.block_on(async move {
+                let tray = AppTray {
+                    state: state_clone,
+                    ctx,
+                };
+
+                match tray.spawn().await {
+                    Ok(handle) => {
+                        info!("Tray icon created via ksni/D-Bus");
+                        // We can't really "listen" to tray updates in a loop if we rely on mutex
+                        // But ksni handles events in its own loop which calls our menu callback
+                        // We only need to wait for shutdown
+                        shutdown_clone.notified().await;
+                        handle.shutdown().await;
+                    }
+                    Err(e) => {
+                        error!(error = ?e, "Failed to create tray icon (D-Bus unavailable?)");
+                    }
+                }
+            });
+        });
+
+        let selected_profile_idx = config
+            .profiles
+            .iter()
+            .position(|p| p.profile_name == config.global.selected_profile)
+            .unwrap_or(0);
+
+        let behavior_settings_state =
+            components::behavior_settings::BehaviorSettingsState::default();
+        let hotkey_settings_state = components::hotkey_settings::HotkeySettingsState::default();
+        let visual_settings_state = components::visual_settings::VisualSettingsState::default();
+
+        let mut cycle_order_settings_state =
+            components::cycle_order_settings::CycleOrderSettingsState::default();
+        cycle_order_settings_state.load_from_profile(&config.profiles[selected_profile_idx]);
+
+        #[cfg(target_os = "linux")]
+        let app = Self {
+            state,
+            shutdown_signal,
+            profile_selector: ProfileSelector::new(),
+            behavior_settings_state,
+            hotkey_settings_state,
+            visual_settings_state,
+            cycle_order_settings_state,
+        };
+
+        #[cfg(not(target_os = "linux"))]
+        let app = Self {
+            state,
+            profile_selector: ProfileSelector::new(),
+            behavior_settings_state,
+            hotkey_settings_state,
+            visual_settings_state,
+            cycle_order_settings_state,
+        };
+
+        app
     }
 
-    fn render_unified_settings(&mut self, ui: &mut egui::Ui) {
+
+
+
+    fn render_unified_settings(&mut self, ui: &mut egui::Ui, state: &mut SharedState) {
         let mut action = ui
             .horizontal(|ui| {
                 // Profile dropdown group
                 let action = self.profile_selector.render_dropdown(
                     ui,
-                    &mut self.config,
-                    &mut self.selected_profile_idx,
+                    &mut state.config,
+                    &mut state.selected_profile_idx,
                 );
 
                 // Save/Discard buttons aligned to the right
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     // Discard button
                     if ui.button("✖ Discard Changes").clicked() {
-                        self.discard_changes();
+                        state.discard_changes();
                     }
 
                     // Save button
                     if ui.button("💾 Save & Apply").clicked() {
-                        if let Err(err) = self.save_config() {
+                        if let Err(err) = state.save_config() {
                             error!(error = ?err, "Failed to save config");
-                            self.status_message = Some(StatusMessage {
+                            state.status_message = Some(StatusMessage {
                                 text: format!("Save failed: {err}"),
                                 color: COLOR_ERROR,
                             });
                         } else {
-                            self.reload_daemon_config();
+                            state.reload_daemon_config();
                         }
                     }
                 });
@@ -635,13 +572,13 @@ impl ManagerApp {
 
         ui.horizontal(|ui| {
             self.profile_selector
-                .render_buttons(ui, &self.config, self.selected_profile_idx);
+                .render_buttons(ui, &state.config, state.selected_profile_idx);
 
             // Status text aligned to the right
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if let Some(message) = &self.config_status_message {
+                if let Some(message) = &state.config_status_message {
                     ui.colored_label(message.color, &message.text);
-                } else if self.settings_changed {
+                } else if state.settings_changed {
                     ui.colored_label(COLOR_WARNING, "Unsaved changes");
                 }
             });
@@ -650,8 +587,8 @@ impl ManagerApp {
         // Render modal dialogs (must be called at context level, not inside layout)
         let dialog_action = self.profile_selector.render_dialogs(
             ui.ctx(),
-            &mut self.config,
-            &mut self.selected_profile_idx,
+            &mut state.config,
+            &mut state.selected_profile_idx,
         );
 
         // Merge dialog action with dropdown action
@@ -662,33 +599,33 @@ impl ManagerApp {
         match action {
             ProfileAction::SwitchProfile => {
                 // Load cycle order text when switching profiles
-                let current_profile = &self.config.profiles[self.selected_profile_idx];
+                let current_profile = &state.config.profiles[state.selected_profile_idx];
                 self.cycle_order_settings_state
                     .load_from_profile(current_profile);
 
                 // Save config and reload daemon
-                if let Err(err) = self.save_config() {
+                if let Err(err) = state.save_config() {
                     error!(error = ?err, "Failed to save config after profile switch");
-                    self.status_message = Some(StatusMessage {
+                    state.status_message = Some(StatusMessage {
                         text: format!("Save failed: {err}"),
                         color: COLOR_ERROR,
                     });
                 } else {
-                    self.reload_daemon_config();
+                    state.reload_daemon_config();
                 }
             }
             ProfileAction::ProfileCreated
             | ProfileAction::ProfileDeleted
             | ProfileAction::ProfileUpdated => {
                 // Save config and reload daemon
-                if let Err(err) = self.save_config() {
+                if let Err(err) = state.save_config() {
                     error!(error = ?err, "Failed to save config after profile action");
-                    self.status_message = Some(StatusMessage {
+                    state.status_message = Some(StatusMessage {
                         text: format!("Save failed: {err}"),
                         color: COLOR_ERROR,
                     });
                 } else {
-                    self.reload_daemon_config();
+                    state.reload_daemon_config();
                 }
             }
             ProfileAction::None => {}
@@ -696,7 +633,7 @@ impl ManagerApp {
 
         ui.separator();
 
-        let current_profile = &mut self.config.profiles[self.selected_profile_idx];
+        let current_profile = &mut state.config.profiles[state.selected_profile_idx];
 
         ui.columns(3, |columns| {
             // Column 1: Behavior Settings
@@ -705,8 +642,8 @@ impl ManagerApp {
                 current_profile,
                 &mut self.behavior_settings_state,
             ) {
-                self.settings_changed = true;
-                self.config_status_message = None;
+                state.settings_changed = true;
+                state.config_status_message = None;
             }
 
             // Column 2: Visual Settings + Hotkey Settings
@@ -715,8 +652,8 @@ impl ManagerApp {
                 current_profile,
                 &mut self.visual_settings_state,
             ) {
-                self.settings_changed = true;
-                self.config_status_message = None;
+                state.settings_changed = true;
+                state.config_status_message = None;
             }
             columns[1].add_space(SECTION_SPACING);
             if components::hotkey_settings::ui(
@@ -724,8 +661,8 @@ impl ManagerApp {
                 current_profile,
                 &mut self.hotkey_settings_state,
             ) {
-                self.settings_changed = true;
-                self.config_status_message = None;
+                state.settings_changed = true;
+                state.config_status_message = None;
             }
 
             // Column 3: Character Cycle Order & Per-Character Hotkeys
@@ -735,8 +672,8 @@ impl ManagerApp {
                 &mut self.cycle_order_settings_state,
                 &mut self.hotkey_settings_state,
             ) {
-                self.settings_changed = true;
-                self.config_status_message = None;
+                state.settings_changed = true;
+                state.config_status_message = None;
             }
         });
     }
@@ -744,8 +681,18 @@ impl ManagerApp {
 
 impl eframe::App for ManagerApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        self.poll_daemon();
-        self.poll_tray_events();
+        // Lock shared state
+        // Clone Arc to separate borrow from self
+        let state_arc = self.state.clone();
+        let mut state = match state_arc.lock() {
+            Ok(s) => s,
+            Err(e) => {
+                error!("Failed to lock shared state: {:?}", e);
+                return;
+            }
+        };
+
+        state.poll_daemon();
 
         // Track window geometry changes and update config
         // Clone viewport info to avoid lifetime issues
@@ -764,30 +711,28 @@ impl eframe::App for ManagerApp {
         // Update config if size changed (will be saved on exit)
         if new_width > 0
             && new_height > 0
-            && (new_width != self.config.global.window_width
-                || new_height != self.config.global.window_height)
+            && (new_width != state.config.global.window_width
+                || new_height != state.config.global.window_height)
         {
-            self.config.global.window_width = new_width;
-            self.config.global.window_height = new_height;
+            state.config.global.window_width = new_width;
+            state.config.global.window_height = new_height;
         }
 
-        // Request repaint after short delay to poll for tray events even when unfocused
-        // This ensures tray menu actions are processed promptly without burning CPU in a tight loop
-        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+
 
         // Handle quit request from tray menu
-        if self.should_quit {
+        if state.should_quit {
             ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             return;
         }
 
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.horizontal(|ui| {
-                ui.colored_label(self.daemon_status.color(), self.daemon_status.label());
-                if let Some(child) = &self.daemon {
+                ui.colored_label(state.daemon_status.color(), state.daemon_status.label());
+                if let Some(child) = &state.daemon {
                     ui.label(format!("(PID: {})", child.id()));
                 }
-                if let Some(message) = &self.status_message {
+                if let Some(message) = &state.status_message {
                     ui.add_space(10.0);
                     ui.colored_label(message.color, &message.text);
                 }
@@ -796,7 +741,7 @@ impl eframe::App for ManagerApp {
             ui.separator();
 
             egui::ScrollArea::vertical().show(ui, |ui| {
-                self.render_unified_settings(ui);
+                self.render_unified_settings(ui, &mut *state);
             });
         });
 
@@ -804,19 +749,17 @@ impl eframe::App for ManagerApp {
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
-        if let Err(err) = self.stop_daemon() {
-            error!(error = ?err, "Failed to stop daemon during shutdown");
-        }
-
-        // Save window geometry on exit (avoids flooding disk during resize drag)
-        // Use simple config save since daemon is stopped (no merge needed)
-        if let Err(err) = self
-            .config
-            .save_with_strategy(SaveStrategy::PreserveCharacterPositions)
-        {
-            error!(error = ?err, "Failed to save window geometry on exit");
-        } else {
-            info!("Window geometry saved on exit");
+        if let Ok(mut state) = self.state.lock() {
+            if let Err(err) = state.stop_daemon() {
+                error!(error = ?err, "Failed to stop daemon during shutdown");
+            }
+            // Save config (merging daemon positions if needed, though daemon is stopped)
+            // Just saving is enough as update loop keeps state.config fresh
+            if let Err(err) = state.save_config() {
+                error!(error = ?err, "Failed to save window geometry on exit");
+            } else {
+                info!("Window geometry saved on exit");
+            }
         }
 
         // Signal tray thread to shutdown
