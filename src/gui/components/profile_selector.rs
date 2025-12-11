@@ -46,7 +46,7 @@ impl ProfileSelector {
                 let mut display_idx = self.pending_profile_idx.unwrap_or(*selected_idx);
                 let display_profile = &config.profiles[display_idx];
 
-                egui::ComboBox::from_id_salt("profile_selector")
+                egui::ComboBox::from_id_salt(("profile_selector", config.profiles.len()))
                     .selected_text(&display_profile.profile_name)
                     .show_ui(ui, |ui| {
                         for (idx, profile) in config.profiles.iter().enumerate() {
