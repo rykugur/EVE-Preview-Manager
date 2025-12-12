@@ -178,6 +178,16 @@ pub mod defaults {
 
         /// Default opacity percentage (0-100)
         pub const OPACITY_PERCENT: u8 = 75;
+
+        /// Minimum thumbnail width in pixels
+        pub const MIN_WIDTH: u16 = 25;
+        /// Maximum thumbnail width in pixels
+        pub const MAX_WIDTH: u16 = 2000;
+
+        /// Minimum thumbnail height in pixels
+        pub const MIN_HEIGHT: u16 = 25;
+        /// Maximum thumbnail height in pixels
+        pub const MAX_HEIGHT: u16 = 2000;
     }
 
     /// Border appearance settings

@@ -183,8 +183,12 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
             ui.label("Width:");
             if ui
                 .add(
-                    egui::Slider::new(&mut profile.thumbnail_default_width, 100..=800)
-                        .suffix(" px"),
+                    egui::Slider::new(
+                        &mut profile.thumbnail_default_width,
+                        crate::constants::defaults::thumbnail::MIN_WIDTH
+                            ..=crate::constants::defaults::thumbnail::MAX_WIDTH,
+                    )
+                    .suffix(" px"),
                 )
                 .changed()
             {
@@ -210,8 +214,12 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
             if is_custom {
                 if ui
                     .add(
-                        egui::Slider::new(&mut profile.thumbnail_default_height, 50..=600)
-                            .suffix(" px"),
+                        egui::Slider::new(
+                            &mut profile.thumbnail_default_height,
+                            crate::constants::defaults::thumbnail::MIN_HEIGHT
+                                ..=crate::constants::defaults::thumbnail::MAX_HEIGHT,
+                        )
+                        .suffix(" px"),
                     )
                     .changed()
                 {
@@ -220,8 +228,12 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
             } else {
                 ui.add_enabled(
                     false,
-                    egui::Slider::new(&mut profile.thumbnail_default_height, 50..=600)
-                        .suffix(" px"),
+                    egui::Slider::new(
+                        &mut profile.thumbnail_default_height,
+                        crate::constants::defaults::thumbnail::MIN_HEIGHT
+                            ..=crate::constants::defaults::thumbnail::MAX_HEIGHT,
+                    )
+                    .suffix(" px"),
                 );
             }
         });
@@ -373,7 +385,14 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
             ui.horizontal(|ui| {
                 ui.label("Width:");
                 if ui
-                    .add(egui::Slider::new(&mut state.current_width, 100..=800).suffix(" px"))
+                    .add(
+                        egui::Slider::new(
+                            &mut state.current_width,
+                            crate::constants::defaults::thumbnail::MIN_WIDTH
+                                ..=crate::constants::defaults::thumbnail::MAX_WIDTH,
+                        )
+                        .suffix(" px"),
+                    )
                     .changed()
                 {
                     // Maintain aspect ratio if not custom
@@ -395,11 +414,23 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
                 ui.label("Height:");
 
                 if is_custom {
-                    ui.add(egui::Slider::new(&mut state.current_height, 50..=600).suffix(" px"));
+                    ui.add(
+                        egui::Slider::new(
+                            &mut state.current_height,
+                            crate::constants::defaults::thumbnail::MIN_HEIGHT
+                                ..=crate::constants::defaults::thumbnail::MAX_HEIGHT,
+                        )
+                        .suffix(" px"),
+                    );
                 } else {
                     ui.add_enabled(
                         false,
-                        egui::Slider::new(&mut state.current_height, 50..=600).suffix(" px"),
+                        egui::Slider::new(
+                            &mut state.current_height,
+                            crate::constants::defaults::thumbnail::MIN_HEIGHT
+                                ..=crate::constants::defaults::thumbnail::MAX_HEIGHT,
+                        )
+                        .suffix(" px"),
                     );
                 }
             });
