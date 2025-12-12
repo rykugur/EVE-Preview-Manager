@@ -9,7 +9,16 @@ jobs:
   announce:
     runs-on: ubuntu-latest
     steps:
+
       - name: Post release to Discord
+        if: github.event_name == 'release'
         uses: SethCohen/github-releases-to-discord@v1
         with:
           webhook_url: ${{ secrets.RELEASES_WEBHOOK }}
+
+      - name: Test Discord Webhook
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          curl -H "Content-Type: application/json" \
+          -d '{"username": "GitHub Actions", "content": "✅ **Test Notification**: The Discord Webhook is configured correctly!"}' \
+          "${{ secrets.RELEASES_WEBHOOK }}"
