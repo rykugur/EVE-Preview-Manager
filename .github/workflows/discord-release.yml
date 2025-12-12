@@ -1,0 +1,15 @@
+name: Announce Release to Discord
+
+on:
+  release:
+    types: [published]   # fires when a non-draft release is published
+  workflow_dispatch:      # allows manual triggering for testing
+
+jobs:
+  announce:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Post release to Discord
+        uses: SethCohen/github-releases-to-discord@v1
+        with:
+          webhook_url: ${{ secrets.RELEASES_WEBHOOK }}
