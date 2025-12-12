@@ -219,6 +219,14 @@ impl<'a> Thumbnail<'a> {
                 "Failed to create source picture for '{}'",
                 character_name
             ))?;
+
+        // Apply bilinear filter for smoother downscaling (better text readability)
+        ctx.conn
+            .render_set_picture_filter(src_picture, "bilinear".as_bytes(), &[])
+            .context(format!(
+                "Failed to set bilinear filter for '{}'",
+                character_name
+            ))?;
         ctx.conn
             .render_create_picture(
                 dst_picture,
