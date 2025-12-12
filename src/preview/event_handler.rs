@@ -125,11 +125,25 @@ fn handle_create_notify(ctx: &mut EventContext, event: CreateNotifyEvent) -> Res
             }
 
             // Conditionally persist to disk based on auto-save setting
+            // NOTE: If auto-save is DISABLED, we still perform a "safe save" of ONLY the new character's entry
+            // This ensures the GUI can discover the new character via file monitoring w/o overwriting other pending
+            // position changes that the user chose NOT to save.
             if ctx.daemon_config.profile.thumbnail_auto_save_position {
                 ctx.daemon_config.save().context(format!(
                     "Failed to save initial position for new character '{}'",
                     thumbnail.character_name
                 ))?;
+            } else {
+                 let settings = ctx.daemon_config.character_thumbnails.get(&thumbnail.character_name)
+                    .copied()
+                    .unwrap_or_else(|| crate::types::CharacterSettings::new(
+                        geom.x, geom.y, thumbnail.dimensions.width, thumbnail.dimensions.height
+                    ));
+                 
+                 ctx.daemon_config.save_new_character(&thumbnail.character_name, settings).context(format!(
+                    "Failed to safe-save initial position for new character '{}'",
+                    thumbnail.character_name
+                 ))?;
             }
 
             ctx.eve_clients.insert(event.window, thumbnail);
@@ -574,6 +588,50 @@ pub fn handle_event(ctx: &mut EventContext, event: Event) -> Result<()> {
                         old_name, new_character_name
                     ))?;
 
+                // LOGIC FIX: Ensure the new character is written to disk immediately.
+                // handle_character_change only saves the OLD character (if auto-save is on).
+                // We need to ensure the NEW character is visible to the GUI.
+                if !new_character_name.is_empty() {
+                    // 1. Ensure it's in the in-memory config (use current/new position)
+                    // If handle_character_change returned a position, it's already in config.
+                    // If not, we need to add it.
+                    let settings = if let Some(pos) = new_position {
+                        crate::types::CharacterSettings::new(
+                            pos.x,
+                            pos.y,
+                            thumbnail.dimensions.width,
+                            thumbnail.dimensions.height,
+                        )
+                    } else {
+                        crate::types::CharacterSettings::new(
+                            current_pos.x,
+                            current_pos.y,
+                            thumbnail.dimensions.width,
+                            thumbnail.dimensions.height,
+                        )
+                    };
+                    
+                    // Always update memory
+                    ctx.daemon_config
+                        .character_thumbnails
+                        .insert(new_character_name.to_string(), settings);
+
+                    // 2. Persist to disk (Safe Save vs Full Save)
+                    // NOTE: If auto-save is DISABLED, we specifically use save_new_character to avoid
+                    // overwriting other pending state (like the old character's position if it changed but wasn't saved).
+                    if ctx.daemon_config.profile.thumbnail_auto_save_position {
+                        ctx.daemon_config.save().context(format!(
+                            "Failed to save config after character login '{}'",
+                            new_character_name
+                        ))?;
+                    } else {
+                        ctx.daemon_config.save_new_character(new_character_name, settings).context(format!(
+                            "Failed to safe-save config after character login '{}'",
+                            new_character_name
+                        ))?;
+                    }
+                }
+
                 // Update session state
                 ctx.session_state.update_window_position(
                     event.window,
@@ -641,11 +699,23 @@ pub fn handle_event(ctx: &mut EventContext, event: Event) -> Result<()> {
                         }
 
                         // Conditionally persist to disk based on auto-save setting
+                        // NOTE: If auto-save is DISABLED, we still perform a "safe save" of ONLY the new character's entry.
                         if ctx.daemon_config.profile.thumbnail_auto_save_position {
                             ctx.daemon_config.save().context(format!(
                                 "Failed to save initial position for newly detected character '{}'",
                                 thumbnail.character_name
                             ))?;
+                        } else {
+                             let settings = ctx.daemon_config.character_thumbnails.get(&thumbnail.character_name)
+                                .copied()
+                                .unwrap_or_else(|| crate::types::CharacterSettings::new(
+                                    geom.x, geom.y, thumbnail.dimensions.width, thumbnail.dimensions.height
+                                ));
+                             
+                             ctx.daemon_config.save_new_character(&thumbnail.character_name, settings).context(format!(
+                                "Failed to safe-save initial position for newly detected character '{}'",
+                                thumbnail.character_name
+                             ))?;
                         }
 
                         ctx.eve_clients.insert(event.window, thumbnail);

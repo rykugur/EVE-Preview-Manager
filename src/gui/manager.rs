@@ -170,6 +170,7 @@ struct SharedState {
     settings_changed: bool,
     selected_profile_idx: usize,
     should_quit: bool,
+    last_config_mtime: Option<std::time::SystemTime>,
 }
 
 impl SharedState {
@@ -190,6 +191,7 @@ impl SharedState {
             settings_changed: false,
             selected_profile_idx,
             should_quit: false,
+            last_config_mtime: std::fs::metadata(Config::path()).ok().and_then(|m| m.modified().ok()),
         }
     }
 
@@ -402,6 +404,20 @@ impl SharedState {
             return;
         }
         self.last_health_check = Instant::now();
+
+        // NOTE: Efficient file watching for Immediate Mode GUI
+        // We poll the file modification time every 500ms (synced with daemon health check).
+        // This avoids race conditions by treating the file system as the synchronization source,
+        // and is cheap enough to run in the update loop without blocking the UI.
+        let config_path = Config::path();
+        if let Ok(metadata) = std::fs::metadata(&config_path)
+            && let Ok(mtime) = metadata.modified()
+            && self.last_config_mtime.is_none_or(|last| mtime > last)
+        {
+            info!("Config file modified externally, reloading character list");
+            self.reload_character_list();
+            self.last_config_mtime = Some(mtime);
+        }
 
         if let Some(child) = self.daemon.as_mut() {
             match child.try_wait() {

@@ -274,9 +274,13 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut BehaviorSettings
         ui.horizontal(|ui| {
             ui.label("Resize:");
 
-            egui::ComboBox::from_id_salt("thumbnail_resize_target")
-                .selected_text(&selected_target)
-                .show_ui(ui, |ui| {
+            // Use character count in salt to force refresh when characters are added
+            egui::ComboBox::from_id_salt(format!(
+                "thumbnail_resize_target_{}",
+                profile.character_thumbnails.len()
+            ))
+            .selected_text(&selected_target)
+            .show_ui(ui, |ui| {
                     ui.selectable_value(&mut selected_target, "---".to_string(), "---");
                     ui.selectable_value(
                         &mut selected_target,
