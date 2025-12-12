@@ -15,7 +15,7 @@ jobs:
         uses: SethCohen/github-releases-to-discord@v1
         with:
           webhook_url: ${{ secrets.RELEASES_WEBHOOK }}
-          content: "||@<1448838981251891271>||"
+          content: "||<@&1448838981251891271>||"
 
       - name: Test Discord Webhook
         if: github.event_name == 'workflow_dispatch'
