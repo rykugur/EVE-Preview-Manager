@@ -581,7 +581,7 @@ pub fn handle_event(ctx: &mut EventContext, event: Event) -> Result<()> {
 
                 // Handle character swap: updates position mapping in config and saves to disk
                 // Returns either preserved position (if configured) or current position
-                let new_position = ctx
+                let new_settings = ctx
                     .daemon_config
                     .handle_character_change(
                         &old_name,
@@ -599,9 +599,9 @@ pub fn handle_event(ctx: &mut EventContext, event: Event) -> Result<()> {
                 // handle_character_change only saves the OLD character (if auto-save is on).
                 // If we don't save here, the GUI won't see the new character until the next auto-save.
                 if !new_character_name.is_empty() {
-                    let final_position = if let Some(pos) = new_position {
-                        // Character already exists in config; use its saved position
-                        Some(pos)
+                    let final_settings = if let Some(settings) = new_settings {
+                        // Character already exists in config; use its saved settings
+                        Some(settings)
                     } else {
                         // New/Unseen character found. Determine initial position based on profile settings.
                         let settings = if ctx
@@ -661,24 +661,24 @@ pub fn handle_event(ctx: &mut EventContext, event: Event) -> Result<()> {
                                 ))?;
                         }
 
-                        Some(settings.position())
+                        Some(settings)
                     };
 
                     // Update session state
-                    if let Some(pos) = final_position {
+                    if let Some(settings) = final_settings {
                         ctx.session_state
-                            .update_window_position(event.window, pos.x, pos.y);
+                            .update_window_position(event.window, settings.x, settings.y);
                     }
 
-                    // Update thumbnail (moves to new position)
+                    // Update thumbnail (moves/resizes to new settings)
                     thumbnail
-                        .set_character_name(new_character_name.to_string(), final_position)
+                        .set_character_name(new_character_name.to_string(), final_settings)
                         .context(format!(
                             "Failed to update thumbnail after character change from '{}'",
                             old_name
                         ))?;
                 } else {
-                    // Handle logout: Clear the name, no position change
+                    // Handle logout: Clear the name, no position/size change
                     thumbnail
                         .set_character_name(String::new(), None)
                         .context(format!(

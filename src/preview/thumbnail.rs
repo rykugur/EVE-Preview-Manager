@@ -845,25 +845,107 @@ impl<'a> Thumbnail<'a> {
         Ok(())
     }
 
+    pub fn resize(&mut self, width: u16, height: u16) -> Result<()> {
+        if self.dimensions.width == width && self.dimensions.height == height {
+            return Ok(());
+        }
+
+        if width == 0 || height == 0 {
+            return Err(anyhow::anyhow!(
+                "Invalid resize dimensions for '{}': {}x{}",
+                self.character_name,
+                width,
+                height
+            ));
+        }
+
+        self.dimensions = crate::types::Dimensions::new(width, height);
+
+        self.conn
+            .configure_window(
+                self.window,
+                &ConfigureWindowAux::new()
+                    .width(width as u32)
+                    .height(height as u32),
+            )
+            .context(format!(
+                "Failed to resize window for '{}'",
+                self.character_name
+            ))?;
+
+        // Recreate overlay resources
+        // We must drop the old ones first
+        self.conn
+            .free_pixmap(self.overlay_pixmap)
+            .context("Failed to free old overlay pixmap")?;
+        self.conn
+            .render_free_picture(self.overlay_picture)
+            .context("Failed to free old overlay picture")?;
+
+        // Create new overlay pixmap
+        let overlay_pixmap = self.conn.generate_id()?;
+        self.conn
+            .create_pixmap(
+                crate::constants::x11::ARGB_DEPTH,
+                overlay_pixmap,
+                self.root,
+                width,
+                height,
+            )
+            .context("Failed to create new overlay pixmap")?;
+        self.overlay_pixmap = overlay_pixmap;
+
+        // Create new overlay picture
+        let overlay_picture = self.conn.generate_id()?;
+        self.conn
+            .render_create_picture(
+                overlay_picture,
+                overlay_pixmap,
+                self.formats.argb,
+                &CreatePictureAux::new(),
+            )
+            .context("Failed to create new overlay picture")?;
+        self.overlay_picture = overlay_picture;
+
+        self.conn
+            .flush()
+            .context("Failed to flush X11 connection after resize")?;
+        Ok(())
+    }
+
     /// Called when character name changes (login/logout)
-    /// Updates name and optionally moves to new position
+    /// Updates name and optionally moves/resizes to saved settings
     pub fn set_character_name(
         &mut self,
         new_name: String,
-        new_position: Option<Position>,
+        new_settings: Option<crate::types::CharacterSettings>,
     ) -> Result<()> {
         self.character_name = new_name;
+        
+         // If we resized, we need to redraw the name anyway.
+         // But update_name draws TO overlay_pixmap. 
+         // If we resize, we get a NEW blank overlay_pixmap.
+         // So resize MUST happen BEFORE update_name if we are resizing.
+        
+        if let Some(settings) = new_settings {
+            self.reposition(settings.x, settings.y).context(format!(
+                "Failed to reposition after character change to '{}'",
+                self.character_name
+            ))?;
+            
+            self.resize(settings.dimensions.width, settings.dimensions.height).context(format!(
+               "Failed to resize after character change to '{}'",
+               self.character_name
+            ))?;
+        }
+
         self.update_name().context(format!(
             "Failed to update name overlay to '{}'",
             self.character_name
         ))?;
+        
+        self.update().context("Failed to repaint after character change")?;
 
-        if let Some(Position { x, y }) = new_position {
-            self.reposition(x, y).context(format!(
-                "Failed to reposition after character change to '{}'",
-                self.character_name
-            ))?;
-        }
         Ok(())
     }
 

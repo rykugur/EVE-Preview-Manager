@@ -176,7 +176,7 @@ impl DaemonConfig {
         current_position: Position,
         current_width: u16,
         current_height: u16,
-    ) -> Result<Option<Position>> {
+    ) -> Result<Option<CharacterSettings>> {
         info!(old = %old_name, new = %new_name, "Character change");
 
         if !old_name.is_empty() && self.profile.thumbnail_auto_save_position {
@@ -207,8 +207,15 @@ impl DaemonConfig {
         if !new_name.is_empty()
             && let Some(settings) = self.character_thumbnails.get(new_name)
         {
-            info!(character = %new_name, x = settings.x, y = settings.y, "Moving to saved position for character");
-            return Ok(Some(settings.position()));
+            info!(
+                character = %new_name,
+                x = settings.x,
+                y = settings.y,
+                width = settings.dimensions.width,
+                height = settings.dimensions.height,
+                "Moving and resizing to saved settings for character"
+            );
+            return Ok(Some(*settings));
         }
 
         Ok(None)
