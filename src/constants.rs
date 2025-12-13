@@ -55,24 +55,6 @@ pub mod mouse {
     pub const BUTTON_RIGHT: u8 = 3;
 }
 
-/// Wine process detection constants
-pub mod wine {
-    /// Common Wine process names to check against
-    pub const WINE_PROCESS_NAMES: &[&str] = &["wine64-preloader", "wine-preloader", "wineserver"];
-
-    /// EVE Online executable name
-    pub const EVE_EXE_NAME: &str = "exefile.exe";
-
-    /// Environment variables that indicate a Wine/Proton environment
-    pub const WINE_ENV_VARS: &[&str] = &[
-        "WINEPREFIX",
-        "WINEARCH",
-        "WINELOADER",
-        "PROTON_PREFIX",          // Proton specific
-        "STEAM_COMPAT_DATA_PATH", // Proton specific
-    ];
-}
-
 /// EVE Online window detection constants
 pub mod eve {
     /// Prefix for EVE client window titles (followed by character name)
@@ -83,13 +65,6 @@ pub mod eve {
 
     /// Display name for logged-out character (shown in logs)
     pub const LOGGED_OUT_DISPLAY_NAME: &str = "login_screen";
-
-    /// Known WM_CLASS values for EVE Online
-    pub const WINDOW_CLASSES: &[&str] = &[
-        "exefile.exe",
-        "wine",        // Fallback for some wine configs
-        "steam_app_0", // Flatpak/Steam launch
-    ];
 }
 
 /// Default window positioning constants
@@ -106,8 +81,6 @@ pub mod fixed_point {
 
 /// System paths
 pub mod paths {
-    /// Path format to resolve process executables via /proc/PID/exe
-    pub const PROC_EXE_FORMAT: &str = "/proc/{}/exe";
 
     /// Input device directory
     pub const DEV_INPUT: &str = "/dev/input";

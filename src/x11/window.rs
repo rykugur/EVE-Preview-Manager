@@ -99,11 +99,6 @@ pub fn get_window_class(
     Ok(Some(String::from_utf8_lossy(class_bytes).into_owned()))
 }
 
-/// Check if the window class matches known EVE identifiers
-pub fn is_eve_window_class(class_name: &str) -> bool {
-    eve::WINDOW_CLASSES.contains(&class_name)
-}
-
 /// Check whether the given EVE client window is currently minimized/iconified
 pub fn is_window_minimized(
     conn: &RustConnection,
