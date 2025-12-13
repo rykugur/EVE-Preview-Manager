@@ -37,6 +37,7 @@ pub struct Thumbnail<'a> {
     // === Application State (public, frequently accessed) ===
     pub character_name: String,
     pub state: ThumbnailState,
+    pub hidden: bool, // Tracks if hidden by "hide_when_no_focus"
     pub input_state: InputState,
 
     // === Geometry (public, immutable after creation) ===
@@ -110,6 +111,7 @@ impl<'a> Thumbnail<'a> {
         Ok(Self {
             character_name,
             state: ThumbnailState::default(),
+            hidden: false,
             input_state: InputState::default(),
             dimensions,
             current_position: Position::new(x, y),
@@ -144,25 +146,28 @@ impl<'a> Thumbnail<'a> {
         self.renderer.set_parent(parent);
     }
 
+    /// Checks if the thumbnail is currently visible (mapped and not hidden).
+    pub fn is_visible(&self) -> bool {
+        !self.hidden
+    }
+
     /// Sets the visibility of the thumbnail.
     ///
-    /// Manages X11 mapping/unmapping and updates internal state.
+    /// Manages X11 mapping/unmapping and upgrades internal `hidden` state.
+    /// Does NOT modify the logical `state` (Normal/Minimized).
     pub fn visibility(&mut self, visible: bool) -> Result<()> {
-        let currently_visible = self.state.is_visible();
-        if visible == currently_visible {
+        if self.is_visible() == visible {
             return Ok(());
         }
 
         if visible {
-            // Restore from Hidden state to Normal (unfocused)
-            self.state = ThumbnailState::Normal { focused: false };
+            self.hidden = false;
             self.renderer.map().context(format!(
                 "Failed to map window for '{}'",
                 self.character_name
             ))?;
         } else {
-            // Hide the window
-            self.state = ThumbnailState::Hidden;
+            self.hidden = true;
             self.renderer.unmap().context(format!(
                 "Failed to unmap window for '{}'",
                 self.character_name
@@ -180,13 +185,35 @@ impl<'a> Thumbnail<'a> {
     /// Sets the thumbnail to "Minimized" state and renders the localized overlay.
     pub fn minimized(&mut self) -> Result<()> {
         self.state = ThumbnailState::Minimized;
-        self.renderer
-            .minimized(&self.character_name, self.dimensions)
+        // Only render if allowed (might be hidden)
+        // If hidden, the rendering will happen next time update() is called after reveal
+        if self.is_visible() {
+            self.renderer
+                .minimized(&self.character_name, self.dimensions)?;
+        }
+        Ok(())
     }
 
-    /// Triggers a full repaint of the thumbnail content and overlay.
+    /// Triggers a repaint of the thumbnail content and overlay.
+    ///
+    /// Respects the current logical state (`Minimized` vs `Normal`).
+    /// If hidden, does nothing.
     pub fn update(&self) -> Result<()> {
-        self.renderer.update(&self.character_name, self.dimensions)
+        if !self.is_visible() {
+            return Ok(());
+        }
+
+        match self.state {
+            ThumbnailState::Minimized => {
+                self.renderer
+                    .minimized(&self.character_name, self.dimensions)?;
+            }
+            _ => {
+                self.renderer
+                    .update(&self.character_name, self.dimensions)?;
+            }
+        }
+        Ok(())
     }
 
     /// Requests focus for the source EVE client.
@@ -249,6 +276,7 @@ impl<'a> Thumbnail<'a> {
                 ))?;
         }
 
+        // Force update of name (and implicit repaint if visible)
         self.renderer
             .update_name(&self.character_name, self.dimensions)
             .context(format!(

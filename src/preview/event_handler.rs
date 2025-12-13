@@ -206,9 +206,7 @@ fn handle_focus_in(ctx: &mut EventContext, event: FocusInEvent) -> Result<()> {
 
     // Handle "Hide when no focus" logic - Reveal and refresh if needed
     // We check this BEFORE updating the specific focused window to ensure clean state transitions
-    if ctx.app_ctx.config.hide_when_no_focus
-        && ctx.eve_clients.values().any(|x| !x.state.is_visible())
-    {
+    if ctx.app_ctx.config.hide_when_no_focus && ctx.eve_clients.values().any(|x| !x.is_visible()) {
         for thumbnail in ctx.eve_clients.values_mut() {
             debug!(character = %thumbnail.character_name, "Revealing thumbnail due to focus change");
             thumbnail.visibility(true).context(format!(
@@ -275,7 +273,7 @@ fn handle_button_press(ctx: &mut EventContext, event: ButtonPressEvent) -> Resul
     let clicked_window = ctx
         .eve_clients
         .iter()
-        .find(|(_, thumb)| thumb.is_hovered(event.root_x, event.root_y) && thumb.state.is_visible())
+        .find(|(_, thumb)| thumb.is_hovered(event.root_x, event.root_y) && thumb.is_visible())
         .map(|(win, _)| *win);
 
     let Some(clicked_window) = clicked_window else {
@@ -286,7 +284,7 @@ fn handle_button_press(ctx: &mut EventContext, event: ButtonPressEvent) -> Resul
     let snap_targets = if event.detail == mouse::BUTTON_RIGHT {
         ctx.eve_clients
             .iter()
-            .filter(|(win, t)| **win != clicked_window && t.state.is_visible())
+            .filter(|(win, t)| **win != clicked_window && t.is_visible())
             .filter_map(|(_, t)| {
                 ctx.app_ctx
                     .conn
