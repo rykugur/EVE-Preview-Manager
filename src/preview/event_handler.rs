@@ -41,7 +41,7 @@ fn handle_damage_notify(
         return Ok(());
     }
 
-    // No logging - this fires every frame and would flood logs
+    // NOTE: Logging skipped for high-frequency path
     if let Some(thumbnail) = ctx
         .eve_clients
         .values()
@@ -66,7 +66,6 @@ fn handle_damage_notify(
     Ok(())
 }
 
-/// Handle CreateNotify events - create thumbnail for new EVE window
 /// Handle CreateNotify events - create thumbnail for new EVE window
 #[tracing::instrument(skip(ctx, event))]
 fn handle_create_notify(ctx: &mut EventContext, event: CreateNotifyEvent) -> Result<()> {
@@ -110,7 +109,7 @@ fn handle_create_notify(ctx: &mut EventContext, event: CreateNotifyEvent) -> Res
                 .reply()
                 .context("Failed to get geometry reply for new thumbnail")?;
 
-            // ALWAYS update character_thumbnails in memory (for manual saves)
+            // NOTE: Update character_thumbnails in memory (for manual saves)
             // Skip logged-out clients with empty character name
             if !thumbnail.character_name.is_empty() {
                 let settings = crate::types::CharacterSettings::new(
@@ -165,10 +164,33 @@ fn handle_create_notify(ctx: &mut EventContext, event: CreateNotifyEvent) -> Res
 /// Handle DestroyNotify events - remove destroyed window
 #[tracing::instrument(skip(ctx), fields(window = event.window))]
 fn handle_destroy_notify(ctx: &mut EventContext, event: DestroyNotifyEvent) -> Result<()> {
-    info!(window = event.window, "DestroyNotify received");
-    ctx.cycle_state.remove_window(event.window);
-    ctx.session_state.remove_window(event.window);
-    ctx.eve_clients.remove(&event.window);
+    // Check if the destroyed window is a known client OR the parent of a known client (if reparented)
+    let window_to_remove = if ctx.eve_clients.contains_key(&event.window) {
+        Some(event.window)
+    } else {
+        // Linear search is fine here as we have very few clients (usually < 10)
+        ctx.eve_clients
+            .iter()
+            .find(|(_, thumb)| thumb.parent == Some(event.window))
+            .map(|(win, _)| *win)
+    };
+
+    if let Some(win) = window_to_remove {
+        info!(
+            destroyed_window = event.window,
+            client_window = win,
+            "DestroyNotify matched EVE client (direct or parent)"
+        );
+        ctx.cycle_state.remove_window(win);
+        ctx.session_state.remove_window(win);
+        ctx.eve_clients.remove(&win);
+    } else {
+        // Log at debug now since we expect many unrelated destroys
+        debug!(
+            window = event.window,
+            "Ignored DestroyNotify for unknown/untracked window"
+        );
+    }
     Ok(())
 }
 
@@ -380,7 +402,7 @@ fn handle_button_release(ctx: &mut EventContext, event: ButtonReleaseEvent) -> R
             ctx.session_state
                 .update_window_position(thumbnail.window, geom.x, geom.y);
 
-            // ALWAYS update character_thumbnails in memory (for manual saves)
+            // NOTE: Update character_thumbnails in memory (for manual saves)
             // Skip logged-out clients with empty character name
             if !thumbnail.character_name.is_empty() {
                 let settings = crate::types::CharacterSettings::new(
@@ -727,7 +749,7 @@ pub fn handle_event(ctx: &mut EventContext, event: Event) -> Result<()> {
                             .reply()
                             .context("Failed to get geometry reply for newly detected thumbnail")?;
 
-                        // ALWAYS update character_thumbnails in memory (for manual saves)
+                        // NOTE: Update character_thumbnails in memory (for manual saves)
                         // Skip logged-out clients with empty character name
                         if !thumbnail.character_name.is_empty() {
                             let settings = crate::types::CharacterSettings::new(
@@ -817,6 +839,36 @@ pub fn handle_event(ctx: &mut EventContext, event: Event) -> Result<()> {
                     thumbnail.current_position = Position::new(event.x, event.y);
                 }
                 */
+            }
+            Ok(())
+        }
+        Event::UnmapNotify(event) => {
+            if ctx.eve_clients.contains_key(&event.window) {
+                info!(
+                    window = event.window,
+                    "UnmapNotify received for tracked client"
+                );
+                // TODO: Consider handling Unmap as "hidden" state if not minimized?
+            }
+            Ok(())
+        }
+        Event::ReparentNotify(event) => {
+            if let Some(thumbnail) = ctx.eve_clients.get_mut(&event.window) {
+                info!(
+                    window = event.window,
+                    parent = event.parent,
+                    "ReparentNotify received - updating tracked parent"
+                );
+                thumbnail.parent = Some(event.parent);
+            }
+            Ok(())
+        }
+        Event::MapNotify(event) => {
+            if ctx.eve_clients.contains_key(&event.window) {
+                debug!(
+                    window = event.window,
+                    "MapNotify received for tracked client"
+                );
             }
             Ok(())
         }

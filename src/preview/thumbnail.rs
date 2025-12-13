@@ -44,10 +44,11 @@ pub struct Thumbnail<'a> {
     pub current_position: Position, // Cached position for hit testing
 
     // === X11 Window Handles (private/public owned resources) ===
-    pub window: Window, // Our thumbnail window (public for event handling)
-    pub src: Window,    // Source EVE window (public for event handling)
-    pub damage: Damage, // DAMAGE extension handle (public for event matching)
-    root: Window,       // Root window (private, cached from screen)
+    pub window: Window,         // Our thumbnail window (public for event handling)
+    pub src: Window,            // Source EVE window (public for event handling)
+    pub parent: Option<Window>, // Parent window (if reparented by WM)
+    pub damage: Damage,         // DAMAGE extension handle (public for event matching)
+    root: Window,               // Root window (private, cached from screen)
 
     // === X11 Render Resources (private, owned resources) ===
     border_fill: Picture,     // Solid color fill for border
@@ -419,6 +420,7 @@ impl<'a> Thumbnail<'a> {
             // X11 Window Handles
             window,
             src,
+            parent: None,
             damage,
             root: ctx.screen.root,
 
@@ -930,10 +932,7 @@ impl<'a> Thumbnail<'a> {
     ) -> Result<()> {
         self.character_name = new_name;
 
-        // If we resized, we need to redraw the name anyway.
-        // But update_name draws TO overlay_pixmap.
-        // If we resize, we get a NEW blank overlay_pixmap.
-        // So resize MUST happen BEFORE update_name if we are resizing.
+        // NOTE: Resize must precede update_name because it regenerates the overlay pixmap.
 
         if let Some(settings) = new_settings {
             self.reposition(settings.x, settings.y).context(format!(
