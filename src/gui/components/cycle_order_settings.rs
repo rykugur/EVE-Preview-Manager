@@ -306,6 +306,16 @@ fn render_unified_cycle_group_tab(
                                 })
                                 .response;
 
+                            // Remove button right after character name
+                            if ui
+                                .small_button("✖")
+                                .on_hover_text("Remove from cycle group")
+                                .clicked()
+                            {
+                                to_delete = Some(row_idx);
+                                *changed = true;
+                            }
+
                             // Right-aligned buttons (not draggable)
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
