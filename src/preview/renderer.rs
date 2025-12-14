@@ -331,7 +331,33 @@ impl<'a> ThumbnailRenderer<'a> {
             // X11 Window Handles
             window,
             src,
-            parent: None,
+            parent: {
+                // Proactively check for existing parent (handle already-running windowed clients)
+                match ctx.conn.query_tree(src) {
+                    Ok(cookie) => match cookie.reply() {
+                        Ok(reply) => {
+                            if reply.parent != ctx.screen.root {
+                                info!(
+                                    window = src,
+                                    parent = reply.parent,
+                                    "Detected existing parent for window"
+                                );
+                                Some(reply.parent)
+                            } else {
+                                None
+                            }
+                        }
+                        Err(e) => {
+                            tracing::warn!("Failed to get query_tree reply: {:?}", e);
+                            None
+                        }
+                    },
+                    Err(e) => {
+                        tracing::warn!("Failed to send query_tree: {:?}", e);
+                        None
+                    }
+                }
+            },
             damage,
             root: ctx.screen.root,
 

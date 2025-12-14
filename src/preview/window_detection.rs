@@ -93,8 +93,11 @@ pub fn check_eve_window(
         ctx.conn
             .change_window_attributes(
                 window,
-                &ChangeWindowAttributesAux::new()
-                    .event_mask(EventMask::PROPERTY_CHANGE | EventMask::FOCUS_CHANGE),
+                &ChangeWindowAttributesAux::new().event_mask(
+                    EventMask::PROPERTY_CHANGE
+                        | EventMask::FOCUS_CHANGE
+                        | EventMask::STRUCTURE_NOTIFY,
+                ),
             )
             .context(format!(
                 "Failed to set focus event mask for EVE window {} ('{}')",
