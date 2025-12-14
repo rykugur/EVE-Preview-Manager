@@ -291,7 +291,7 @@ fn evdev_keycode_to_x11(evdev_code: u16) -> Option<Keycode> {
     // Valid X11 keycodes are 8-255
     let x11_code = evdev_code.checked_add(8)?;
 
-    if x11_code >= 8 && x11_code <= 255 {
+    if (8..=255).contains(&x11_code) {
         Some(x11_code as Keycode)
     } else {
         None

@@ -13,6 +13,7 @@ use crate::config::HotkeyBinding;
 use crate::input::listener::CycleCommand;
 
 /// Capabilities and limitations of a hotkey backend
+#[allow(dead_code)]
 #[derive(Debug, Clone)]
 pub struct BackendCapabilities {
     /// Can detect modifiers from different physical devices
@@ -48,8 +49,10 @@ pub trait HotkeyBackend: Sized {
     fn is_available() -> bool;
 
     /// Get human-readable backend name
+    #[allow(dead_code)]
     fn name() -> &'static str;
 
     /// Get backend capabilities and limitations
+    #[allow(dead_code)]
     fn capabilities() -> BackendCapabilities;
 }

@@ -12,7 +12,7 @@ use crate::config::{HotkeyBackendType, HotkeyBinding};
 use crate::constants::{input, paths, permissions};
 use crate::input::device_detection;
 use x11rb::connection::Connection;
-use x11rb::protocol::xproto::{ConnectionExt, GrabMode, KeyButMask, ModMask};
+use x11rb::protocol::xproto::{ConnectionExt, GrabMode, KeyButMask};
 
 /// Result of a key capture operation
 #[derive(Debug, Clone)]
@@ -140,19 +140,52 @@ fn capture_key_x11(state_tx: Sender<CaptureState>) -> Result<CaptureResult> {
     let screen = &conn.setup().roots[screen_num];
     let root = screen.root;
 
-    // Grab keyboard to intercept all key events.
-    // This is required because we need to capture raw input that might otherwise be consumed
-    // by the window manager or focused application.
-    conn.grab_keyboard(
-        false,
-        root,
-        x11rb::CURRENT_TIME,
-        GrabMode::ASYNC,
-        GrabMode::ASYNC,
-    )
-    .context("Failed to grab keyboard")?
-    .reply()
-    .context("Failed to get grab_keyboard reply")?;
+    // Retry grabbing the keyboard.
+    // This is necessary because another client (e.g., the window manager or a held button press)
+    // might momentarily block the generic grab. We retry with a short timeout.
+    let grab_timeout = Duration::from_millis(1000);
+    let grab_start = std::time::Instant::now();
+    let mut grabbed = false;
+
+    while grab_start.elapsed() < grab_timeout {
+        let reply = conn
+            .grab_keyboard(
+                false,
+                root,
+                x11rb::CURRENT_TIME,
+                GrabMode::ASYNC,
+                GrabMode::ASYNC,
+            )
+            .context("Failed to grab keyboard")?
+            .reply()
+            .context("Failed to get grab_keyboard reply")?;
+
+        if reply.status == x11rb::protocol::xproto::GrabStatus::SUCCESS {
+            grabbed = true;
+            break;
+        } else if reply.status == x11rb::protocol::xproto::GrabStatus::ALREADY_GRABBED {
+            // Wait and retry - using a very short sleep to minimize perceived latency
+            // while still yielding to the scheduler.
+            thread::sleep(Duration::from_millis(1));
+            continue;
+        } else {
+            // Other error (InvalidTime, NotViewable, Frozen, etc.)
+            return Err(anyhow::anyhow!(
+                "GrabKeyboard failed with status: {:?}",
+                reply.status
+            ));
+        }
+    }
+
+    if !grabbed {
+        return Err(anyhow::anyhow!(
+            "Failed to grab keyboard after retrying (AlreadyGrabbed)"
+        ));
+    }
+
+    // Force a roundtrip to ensure the server has processed the grab and we are consistent.
+    // This often fixes issues where events aren't delivered immediately after a grab.
+    let _ = conn.get_input_focus()?.reply()?;
 
     info!("Keyboard grabbed for X11 key capture");
 
@@ -169,6 +202,9 @@ fn capture_key_x11(state_tx: Sender<CaptureState>) -> Result<CaptureResult> {
         if start.elapsed() > timeout {
             return Ok(CaptureResult::Timeout);
         }
+
+        // Ensure requests are sent
+        let _ = conn.flush();
 
         // Non-blocking poll using x11rb
         if let Some(event) = conn.poll_for_event()? {
@@ -191,7 +227,7 @@ fn capture_key_x11(state_tx: Sender<CaptureState>) -> Result<CaptureResult> {
                     debug!(x11_keycode=keycode, evdev_code=evdev_code, state=?state_mask, "X11 KeyPress");
 
                     // Map X11 modifier mask bits to our internal boolean flags
-                    let modmask = KeyButMask::from(state_mask);
+                    let modmask = state_mask;
                     state.shift = modmask.contains(KeyButMask::SHIFT);
                     state.ctrl = modmask.contains(KeyButMask::CONTROL);
                     state.alt = modmask.contains(KeyButMask::MOD1);

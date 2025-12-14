@@ -197,6 +197,12 @@ fn handle_destroy_notify(ctx: &mut EventContext, event: DestroyNotifyEvent) -> R
 /// Handle FocusIn events - update focused state and visibility
 #[tracing::instrument(skip(ctx), fields(window = event.event))]
 fn handle_focus_in(ctx: &mut EventContext, event: FocusInEvent) -> Result<()> {
+    // Ignore NotifyUngrab events to prevent flashing when a hotkey release ends a passive grab
+    if event.mode == NotifyMode::UNGRAB {
+        debug!(window = event.event, "Ignoring FocusIn with mode Ungrab");
+        return Ok(());
+    }
+
     debug!(window = event.event, "FocusIn received");
 
     // Sync cycle state with the focused window
@@ -236,6 +242,12 @@ fn handle_focus_in(ctx: &mut EventContext, event: FocusInEvent) -> Result<()> {
 /// Handle FocusOut events - update focused state and visibility  
 #[tracing::instrument(skip(ctx), fields(window = event.event))]
 fn handle_focus_out(ctx: &mut EventContext, event: FocusOutEvent) -> Result<()> {
+    // Ignore NotifyGrab events to prevent flickering when a hotkey press triggers a passive grab
+    if event.mode == NotifyMode::GRAB {
+        debug!(window = event.event, "Ignoring FocusOut with mode Grab");
+        return Ok(());
+    }
+
     debug!(window = event.event, "FocusOut received");
     if let Some(thumbnail) = ctx.eve_clients.get_mut(&event.event) {
         // Transition to unfocused normal state

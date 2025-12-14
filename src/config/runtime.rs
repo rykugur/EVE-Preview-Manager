@@ -317,6 +317,7 @@ mod tests {
                 hotkey_require_eve_focus: true,
                 hotkey_cycle_group: vec![],
                 character_hotkeys: HashMap::new(),
+                hotkey_backend: crate::config::HotkeyBackendType::X11,
                 thumbnail_enabled: true,
                 character_thumbnails: HashMap::new(),
             },
