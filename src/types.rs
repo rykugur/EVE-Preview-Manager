@@ -160,13 +160,29 @@ impl Default for ThumbnailState {
 }
 
 /// Per-character settings: position and thumbnail dimensions
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CharacterSettings {
     pub x: i16,
     pub y: i16,
     /// Thumbnail dimensions (0 = use auto-detect)
     #[serde(flatten)]
     pub dimensions: Dimensions,
+
+    // -- Advanced Character Settings --
+    #[serde(default)]
+    pub alias: Option<String>,
+    #[serde(default)]
+    pub notes: Option<String>,
+    #[serde(default)]
+    pub override_active_border_color: Option<String>,
+    #[serde(default)]
+    pub override_inactive_border_color: Option<String>,
+    #[serde(default)]
+    pub override_active_border_size: Option<u16>,
+    #[serde(default)]
+    pub override_inactive_border_size: Option<u16>,
+    #[serde(default)]
+    pub override_text_color: Option<String>,
 }
 
 impl CharacterSettings {
@@ -175,6 +191,13 @@ impl CharacterSettings {
             x,
             y,
             dimensions: Dimensions::new(width, height),
+            alias: None,
+            notes: None,
+            override_active_border_color: None,
+            override_inactive_border_color: None,
+            override_active_border_size: None,
+            override_inactive_border_size: None,
+            override_text_color: None,
         }
     }
 

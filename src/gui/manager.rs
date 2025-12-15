@@ -27,7 +27,7 @@ struct ManagerApp {
     behavior_settings_state: components::behavior_settings::BehaviorSettingsState,
     hotkey_settings_state: components::hotkey_settings::HotkeySettingsState,
     visual_settings_state: components::visual_settings::VisualSettingsState,
-    cycle_order_settings_state: components::cycle_order_settings::CycleOrderSettingsState,
+    characters_state: components::characters::CharactersState,
     #[cfg(target_os = "linux")]
     shutdown_signal: std::sync::Arc<tokio::sync::Notify>,
     #[cfg(target_os = "linux")]
@@ -115,9 +115,8 @@ impl ManagerApp {
         let hotkey_settings_state = components::hotkey_settings::HotkeySettingsState::default();
         let visual_settings_state = components::visual_settings::VisualSettingsState::default();
 
-        let mut cycle_order_settings_state =
-            components::cycle_order_settings::CycleOrderSettingsState::default();
-        cycle_order_settings_state.load_from_profile(&config.profiles[selected_profile_idx]);
+        let mut characters_state = components::characters::CharactersState::default();
+        characters_state.load_from_profile(&config.profiles[selected_profile_idx]);
 
         #[cfg(target_os = "linux")]
         let app = Self {
@@ -128,7 +127,7 @@ impl ManagerApp {
             behavior_settings_state,
             hotkey_settings_state,
             visual_settings_state,
-            cycle_order_settings_state,
+            characters_state,
             active_tab: GuiTab::Behavior,
         };
 
@@ -139,14 +138,12 @@ impl ManagerApp {
             behavior_settings_state,
             hotkey_settings_state,
             visual_settings_state,
-            cycle_order_settings_state,
+            characters_state,
             active_tab: GuiTab::Behavior,
         };
 
         app
     }
-
-
 }
 
 impl eframe::App for ManagerApp {
@@ -215,8 +212,7 @@ impl eframe::App for ManagerApp {
         match action {
             ProfileAction::SwitchProfile => {
                 let current_profile = &state.config.profiles[state.selected_profile_idx];
-                self.cycle_order_settings_state
-                    .load_from_profile(current_profile);
+                self.characters_state.load_from_profile(current_profile);
 
                 if let Err(err) = state.save_config() {
                     error!(error = ?err, "Failed to save config after profile switch");
@@ -252,7 +248,7 @@ impl eframe::App for ManagerApp {
         egui::CentralPanel::default().show(ctx, |ui| {
             egui::ScrollArea::vertical().show(ui, |ui| {
                 let current_profile = &mut state.config.profiles[state.selected_profile_idx];
-                
+
                 match self.active_tab {
                     GuiTab::Behavior => {
                         if components::behavior_settings::ui(
@@ -285,10 +281,10 @@ impl eframe::App for ManagerApp {
                         }
                     }
                     GuiTab::Characters => {
-                        if components::cycle_order_settings::ui(
+                        if components::characters::ui(
                             ui,
                             current_profile,
-                            &mut self.cycle_order_settings_state,
+                            &mut self.characters_state,
                             &mut self.hotkey_settings_state,
                         ) {
                             state.settings_changed = true;
@@ -355,7 +351,6 @@ pub fn run_gui() -> Result<()> {
 
     let mut viewport_builder = egui::ViewportBuilder::default()
         .with_inner_size([window_width, window_height])
-
         .with_title("EVE Preview Manager - v".to_string() + env!("CARGO_PKG_VERSION"));
 
     if let Some(icon_data) = icon {

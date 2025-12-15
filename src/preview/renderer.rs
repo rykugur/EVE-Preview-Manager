@@ -466,7 +466,12 @@ impl<'a> ThumbnailRenderer<'a> {
 
     /// Updates the text overlay with the character name.
     pub fn update_name(&self, character_name: &str, dimensions: Dimensions) -> Result<()> {
-        self.overlay.update_name(character_name, dimensions)
+        // Calculate appropriate border size to preserve the hole
+        // We default to focused=false since this is usually called during initialization or generic updates
+        // However, if we are focused, the next border() call will correct it.
+        let border_size = self.overlay.calculate_border_size(character_name, false);
+        self.overlay
+            .update_name(character_name, dimensions, border_size)
     }
 
     /// Composites the text/border overlay on top of the thumbnail content.

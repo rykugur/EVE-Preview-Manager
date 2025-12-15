@@ -490,12 +490,14 @@ pub async fn run_preview_daemon() -> Result<()> {
     for (window, thumbnail) in eve_clients.iter_mut() {
         // Check if this window currently has focus
         let is_focused = active_eve_window.map(|w| w == *window).unwrap_or(false);
-        
+
         // Update state and draw appropriate border
-        thumbnail.state = crate::types::ThumbnailState::Normal { focused: is_focused };
+        thumbnail.state = crate::types::ThumbnailState::Normal {
+            focused: is_focused,
+        };
         if let Err(e) = thumbnail.border(is_focused) {
             // Log warning but continue
-             tracing::warn!(
+            tracing::warn!(
                 window = window,
                 character = %thumbnail.character_name,
                 error = %e,

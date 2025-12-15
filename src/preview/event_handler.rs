@@ -137,7 +137,7 @@ fn handle_create_notify(ctx: &mut EventContext, event: CreateNotifyEvent) -> Res
                     .daemon_config
                     .character_thumbnails
                     .get(&thumbnail.character_name)
-                    .copied()
+                    .cloned()
                     .unwrap_or_else(|| {
                         crate::types::CharacterSettings::new(
                             geom.x,
@@ -156,12 +156,12 @@ fn handle_create_notify(ctx: &mut EventContext, event: CreateNotifyEvent) -> Res
             }
 
             ctx.eve_clients.insert(event.window, thumbnail);
-            
+
             // Draw initial border (inactive) for the new thumbnail to ensure it matches configuration
-            if let Some(thumb) = ctx.eve_clients.get_mut(&event.window) {
-                if let Err(e) = thumb.border(false) {
-                    tracing::warn!(window = event.window, error = %e, "Failed to draw initial border for new window");
-                }
+            if let Some(thumb) = ctx.eve_clients.get_mut(&event.window)
+                && let Err(e) = thumb.border(false)
+            {
+                tracing::warn!(window = event.window, error = %e, "Failed to draw initial border for new window");
             }
         }
     }
@@ -236,7 +236,7 @@ fn handle_focus_in(ctx: &mut EventContext, event: FocusInEvent) -> Result<()> {
 
     // Now update the specific window that received focus
     // We also iterate over ALL windows to ensure only one has the "focused" (active border) state.
-    // This maintains the "Active Border Persists" behavior where the last active EVE window 
+    // This maintains the "Active Border Persists" behavior where the last active EVE window
     // stays highlighted even if focus moves to a non-EVE window (like the manager GUI).
     for (window, thumbnail) in ctx.eve_clients.iter_mut() {
         if *window == event.event {
@@ -249,8 +249,8 @@ fn handle_focus_in(ctx: &mut EventContext, event: FocusInEvent) -> Result<()> {
                 ))?;
             }
         } else if thumbnail.state.is_focused() {
-             // This window lost focus (to another EVE window)
-             // We explicitly toggle it to inactive/gray border
+            // This window lost focus (to another EVE window)
+            // We explicitly toggle it to inactive/gray border
             thumbnail.state = ThumbnailState::Normal { focused: false };
             thumbnail.border(false).context(format!(
                 "Failed to clear border for '{}' (focus moved to '{}')",
@@ -272,7 +272,7 @@ fn handle_focus_out(ctx: &mut EventContext, event: FocusOutEvent) -> Result<()> 
     }
 
     debug!(window = event.event, "FocusOut received");
-    
+
     // NOTE: We do NOT explicitly set focused=false or clear the border here.
     // We want the border to remain "Active" (Red) on the last focused EVE window.
     // The previous active window will only be cleared (Gray) when a NEW EVE window receives focus
@@ -282,16 +282,20 @@ fn handle_focus_out(ctx: &mut EventContext, event: FocusOutEvent) -> Result<()> 
     // Since we track "Visual Focus" (Border) in thumbnail.state, we can't use it for system focus check.
     // Instead, we check if the stored visual focus matches the event window.
     if ctx.app_ctx.config.hide_when_no_focus {
-         // Check if the window losing focus was our "Active" one
-        let was_active = ctx.eve_clients.get(&event.event).map(|t| t.state.is_focused()).unwrap_or(false);
-        
+        // Check if the window losing focus was our "Active" one
+        let was_active = ctx
+            .eve_clients
+            .get(&event.event)
+            .map(|t| t.state.is_focused())
+            .unwrap_or(false);
+
         if was_active {
             // The active EVE window lost focus. Since X11 only has one active window,
             // this implies NO EVE window is currently focused (unless we get a FocusIn immediately after).
             // We optimistically hide thumbnails. If a FocusIn follows (switching between clients),
             // it will reveal them again. This might cause a micro-flicker but ensures correct hiding
             // when switching to non-EVE apps.
-             for thumbnail in ctx.eve_clients.values_mut() {
+            for thumbnail in ctx.eve_clients.values_mut() {
                 debug!(character = %thumbnail.character_name, "Hiding thumbnail due to focus loss");
                 thumbnail.visibility(false).context(format!(
                     "Failed to hide thumbnail '{}' on focus loss",
@@ -708,7 +712,7 @@ pub fn handle_event(ctx: &mut EventContext, event: Event) -> Result<()> {
                         // Update memory
                         ctx.daemon_config
                             .character_thumbnails
-                            .insert(new_character_name.to_string(), settings);
+                            .insert(new_character_name.to_string(), settings.clone());
 
                         // Persist to disk
                         if ctx.daemon_config.profile.thumbnail_auto_save_position {
@@ -718,7 +722,7 @@ pub fn handle_event(ctx: &mut EventContext, event: Event) -> Result<()> {
                             ))?;
                         } else {
                             ctx.daemon_config
-                                .save_new_character(new_character_name, settings)
+                                .save_new_character(new_character_name, settings.clone())
                                 .context(format!(
                                     "Failed to safe-save config after character login '{}'",
                                     new_character_name
@@ -729,7 +733,7 @@ pub fn handle_event(ctx: &mut EventContext, event: Event) -> Result<()> {
                     };
 
                     // Update session state
-                    if let Some(settings) = final_settings {
+                    if let Some(ref settings) = final_settings {
                         ctx.session_state.update_window_position(
                             event.window,
                             settings.x,
@@ -800,37 +804,45 @@ pub fn handle_event(ctx: &mut EventContext, event: Event) -> Result<()> {
                                 thumbnail.dimensions.width,
                                 thumbnail.dimensions.height,
                             );
+
+                            // Update memory
                             ctx.daemon_config
                                 .character_thumbnails
-                                .insert(thumbnail.character_name.clone(), settings);
-                        }
+                                .insert(thumbnail.character_name.clone(), settings.clone());
 
-                        // Conditionally persist to disk based on auto-save setting
-                        // NOTE: If auto-save is DISABLED, we still perform a "safe save" of ONLY the new character's entry.
-                        if ctx.daemon_config.profile.thumbnail_auto_save_position {
-                            ctx.daemon_config.save().context(format!(
-                                "Failed to save initial position for newly detected character '{}'",
-                                thumbnail.character_name
-                            ))?;
-                        } else {
-                            let settings = ctx
-                                .daemon_config
-                                .character_thumbnails
-                                .get(&thumbnail.character_name)
-                                .copied()
-                                .unwrap_or_else(|| {
-                                    crate::types::CharacterSettings::new(
-                                        geom.x,
-                                        geom.y,
-                                        thumbnail.dimensions.width,
-                                        thumbnail.dimensions.height,
-                                    )
-                                });
+                            // Persist to disk
+                            if ctx.daemon_config.profile.thumbnail_auto_save_position {
+                                ctx.daemon_config.save().context(format!(
+                                    "Failed to save position for new log in '{}'",
+                                    thumbnail.character_name
+                                ))?;
+                            } else {
+                                // If auto-save is OFF, we still need to track this character so it appears in the menu
+                                // But we won't clutter the config file with positions for every character until explicitly saved
+                                let settings = ctx
+                                    .daemon_config
+                                    .character_thumbnails
+                                    .get(&thumbnail.character_name)
+                                    .cloned()
+                                    .unwrap_or_else(|| {
+                                        crate::types::CharacterSettings::new(
+                                            geom.x,
+                                            geom.y,
+                                            thumbnail.dimensions.width,
+                                            thumbnail.dimensions.height,
+                                        )
+                                    });
 
-                            ctx.daemon_config.save_new_character(&thumbnail.character_name, settings).context(format!(
-                                "Failed to safe-save initial position for newly detected character '{}'",
-                                thumbnail.character_name
-                             ))?;
+                                // Important: We must persist this new character to the config file so the GUI sees it.
+                                // But we use a specialized save method that ONLY adds the new key without saving
+                                // other pending position changes (respecting auto-save=off).
+                                ctx.daemon_config
+                                    .save_new_character(&thumbnail.character_name, settings)
+                                    .context(format!(
+                                        "Failed to safe-save initial position for newly detected character '{}'",
+                                        thumbnail.character_name
+                                    ))?;
+                            }
                         }
 
                         ctx.eve_clients.insert(event.window, thumbnail);

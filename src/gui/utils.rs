@@ -92,3 +92,45 @@ pub fn spawn_preview_daemon() -> Result<Child> {
         .spawn()
         .context("Failed to spawn preview daemon")
 }
+
+/// Parse hex color string - supports both #RRGGBB and #AARRGGBB formats.
+/// Returns a Color32 if parsing succeeds, treating 6-digit hex as full-opacity RGB.
+pub fn parse_hex_color(hex: &str) -> Result<egui::Color32, ()> {
+    let hex = hex.trim_start_matches('#');
+
+    match hex.len() {
+        6 => {
+            // RGB format - assume full opacity
+            let rr = u8::from_str_radix(&hex[0..2], 16).map_err(|_| ())?;
+            let gg = u8::from_str_radix(&hex[2..4], 16).map_err(|_| ())?;
+            let bb = u8::from_str_radix(&hex[4..6], 16).map_err(|_| ())?;
+            Ok(egui::Color32::from_rgba_unmultiplied(rr, gg, bb, 255))
+        }
+        8 => {
+            // ARGB format
+            let aa = u8::from_str_radix(&hex[0..2], 16).map_err(|_| ())?;
+            let rr = u8::from_str_radix(&hex[2..4], 16).map_err(|_| ())?;
+            let gg = u8::from_str_radix(&hex[4..6], 16).map_err(|_| ())?;
+            let bb = u8::from_str_radix(&hex[6..8], 16).map_err(|_| ())?;
+            Ok(egui::Color32::from_rgba_unmultiplied(rr, gg, bb, aa))
+        }
+        _ => Err(()),
+    }
+}
+
+/// Format egui Color32 to hex string (#AARRGGBB or #RRGGBB)
+pub fn format_hex_color(color: egui::Color32) -> String {
+    if color.a() == 255 {
+        // Full opacity - use shorter RGB format
+        format!("#{:02X}{:02X}{:02X}", color.r(), color.g(), color.b())
+    } else {
+        // Has transparency - use ARGB format
+        format!(
+            "#{:02X}{:02X}{:02X}{:02X}",
+            color.a(),
+            color.r(),
+            color.g(),
+            color.b()
+        )
+    }
+}

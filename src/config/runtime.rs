@@ -19,14 +19,18 @@ use crate::types::{CharacterSettings, Position, TextOffset};
 #[derive(Debug, Clone)]
 pub struct DisplayConfig {
     pub enabled: bool,
-    pub opacity: u32,       // 0-255 mapped to 0-0xFFFFFFFF
+    pub opacity: u32, // 0-255 mapped to 0-0xFFFFFFFF
     pub active_border_size: u16,
     pub active_border_color: Color,
     pub text_offset: TextOffset,
     pub text_color: u32,
     pub hide_when_no_focus: bool,
     pub inactive_border_enabled: bool,
+
+    /// Map of character name -> settings (overrides, aliases, etc)
+    pub character_settings: std::collections::HashMap<String, crate::types::CharacterSettings>,
     pub inactive_border_color: Color,
+    pub inactive_border_size: u16,
 }
 
 /// Daemon runtime configuration - holds selected profile settings
@@ -99,6 +103,12 @@ impl DaemonConfig {
             hide_when_no_focus: self.profile.thumbnail_hide_not_focused,
             inactive_border_enabled: self.profile.thumbnail_inactive_border,
             inactive_border_color,
+            inactive_border_size: if self.profile.thumbnail_inactive_border {
+                self.profile.thumbnail_inactive_border_size
+            } else {
+                0
+            },
+            character_settings: self.profile.character_thumbnails.clone(),
         }
     }
 
@@ -165,7 +175,7 @@ impl DaemonConfig {
         let profile_positions = &mut profile_config.profiles[profile_idx].character_thumbnails;
         for (char_name, char_settings) in &self.character_thumbnails {
             if !char_name.is_empty() {
-                profile_positions.insert(char_name.clone(), *char_settings);
+                profile_positions.insert(char_name.clone(), char_settings.clone());
             }
         }
 
@@ -226,7 +236,7 @@ impl DaemonConfig {
                 height = settings.dimensions.height,
                 "Moving and resizing to saved settings for character"
             );
-            return Ok(Some(*settings));
+            return Ok(Some(settings.clone()));
         }
 
         Ok(None)
@@ -312,6 +322,7 @@ mod tests {
                 thumbnail_active_border_size: border_size,
                 thumbnail_active_border_color: border_color.to_string(),
                 thumbnail_inactive_border: false,
+                thumbnail_inactive_border_size: 0,
                 thumbnail_inactive_border_color: "#00000000".to_string(),
                 thumbnail_text_size: 18,
                 thumbnail_text_x: text_x,

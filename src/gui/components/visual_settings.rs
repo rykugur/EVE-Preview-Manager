@@ -100,18 +100,19 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut VisualSettingsSt
                 // Active Border settings (greyed out if disabled)
                 ui.indent("border_settings", |ui| {
                     ui.add_enabled_ui(profile.thumbnail_active_border, |ui| {
-
                         ui.horizontal(|ui| {
                             ui.label("Color:");
-                            let text_edit =
-                                egui::TextEdit::singleline(&mut profile.thumbnail_active_border_color)
-                                    .desired_width(100.0);
+                            let text_edit = egui::TextEdit::singleline(
+                                &mut profile.thumbnail_active_border_color,
+                            )
+                            .desired_width(100.0);
                             if ui.add(text_edit).changed() {
                                 changed = true;
                             }
 
                             // Color picker button
-                            if let Ok(mut color) = parse_hex_color(&profile.thumbnail_active_border_color)
+                            if let Ok(mut color) =
+                                parse_hex_color(&profile.thumbnail_active_border_color)
                                 && ui.color_edit_button_srgba(&mut color).changed()
                             {
                                 profile.thumbnail_active_border_color = format_hex_color(color);
@@ -149,17 +150,31 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut VisualSettingsSt
                                 parse_hex_color(&profile.thumbnail_inactive_border_color)
                                 && ui.color_edit_button_srgba(&mut color).changed()
                             {
-                                profile.thumbnail_inactive_border_color =
-                                    format_hex_color(color);
+                                profile.thumbnail_inactive_border_color = format_hex_color(color);
+                                changed = true;
+                            }
+                        });
+
+                        ui.horizontal(|ui| {
+                            ui.label("Size:");
+                            if ui
+                                .add(
+                                    egui::DragValue::new(
+                                        &mut profile.thumbnail_inactive_border_size,
+                                    )
+                                    .range(1..=20),
+                                )
+                                .changed()
+                            {
                                 changed = true;
                             }
                         });
                     });
                 });
 
-                // Shared Border Size
+                // Active Border Size
                 ui.horizontal(|ui| {
-                    ui.label("Border Size:");
+                    ui.label("Active Border Size:");
                     if ui
                         .add(
                             egui::DragValue::new(&mut profile.thumbnail_active_border_size)
@@ -302,9 +317,12 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut VisualSettingsSt
                                     mode_changed = true;
                                     if *ratio > 0.0 {
                                         // Update height based on width and selected ratio
-                                        profile.thumbnail_default_height =
-                                            (profile.thumbnail_default_width as f32 / ratio).round()
-                                                as u16;
+                                        profile.thumbnail_default_height = (profile
+                                            .thumbnail_default_width
+                                            as f32
+                                            / ratio)
+                                            .round()
+                                            as u16;
                                         changed = true;
                                     }
                                 }
@@ -386,7 +404,8 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut VisualSettingsSt
                         "Preview: {}×{} ({:.2}:1 ratio)",
                         profile.thumbnail_default_width,
                         profile.thumbnail_default_height,
-                        profile.thumbnail_default_width as f32 / profile.thumbnail_default_height as f32
+                        profile.thumbnail_default_width as f32
+                            / profile.thumbnail_default_height as f32
                     ));
                 });
 

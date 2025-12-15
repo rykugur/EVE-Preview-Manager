@@ -164,7 +164,7 @@ impl SharedState {
                         // Character only in disk (daemon added it): preserve it completely
                         merged_profile
                             .character_thumbnails
-                            .insert(char_name.clone(), *disk_settings);
+                            .insert(char_name.clone(), disk_settings.clone());
                     }
                 }
             }
@@ -258,7 +258,7 @@ impl SharedState {
                         {
                             gui_profile
                                 .character_thumbnails
-                                .insert(char_name.clone(), *char_settings);
+                                .insert(char_name.clone(), char_settings.clone());
                             info!(character = %char_name, profile = %gui_profile.profile_name, "Detected new character from daemon");
                         }
                     }

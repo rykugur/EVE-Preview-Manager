@@ -28,8 +28,8 @@ pub struct OverlayRenderer<'a> {
     pub overlay_pixmap: Pixmap,
     /// X Render Picture wrapping the overlay pixmap.
     pub overlay_picture: Picture,
-    overlay_gc: Gcontext, // Graphics context for text rendering
-    active_border_fill: Picture, // Solid color fill for active border
+    overlay_gc: Gcontext,          // Graphics context for text rendering
+    active_border_fill: Picture,   // Solid color fill for active border
     inactive_border_fill: Picture, // Solid color fill for inactive border
 
     // === Borrowed Dependencies ===
@@ -138,8 +138,9 @@ impl<'a> OverlayRenderer<'a> {
         };
 
         // Render initial name
+        let initial_border_size = renderer.calculate_border_size(character_name, false);
         renderer
-            .update_name(character_name, dimensions)
+            .update_name(character_name, dimensions, initial_border_size)
             .context(format!(
                 "Failed to render initial name for '{}'",
                 character_name
@@ -173,12 +174,51 @@ impl<'a> OverlayRenderer<'a> {
         Ok(())
     }
 
+    /// Calculates the effective border size implementation
+    pub fn calculate_border_size(&self, character_name: &str, focused: bool) -> u16 {
+        if let Some(settings) = self.config.character_settings.get(character_name) {
+            if focused {
+                settings
+                    .override_active_border_size
+                    .unwrap_or(self.config.active_border_size)
+            } else {
+                settings
+                    .override_inactive_border_size
+                    .unwrap_or(self.config.inactive_border_size)
+            }
+        } else if focused {
+            self.config.active_border_size
+        } else {
+            self.config.inactive_border_size
+        }
+    }
+
     /// Renders the character name onto the overlay.
     ///
     /// Handles both direct X11 text rendering (if core fonts are used) and
     /// client-side rendering (if TrueType fonts are used via `fontdue`).
-    pub fn update_name(&self, character_name: &str, dimensions: Dimensions) -> Result<()> {
-        // ... (rest of implementation) ...
+    pub fn update_name(
+        &self,
+        character_name: &str,
+        dimensions: Dimensions,
+        border_size: u16,
+    ) -> Result<()> {
+        // Resolve settings overrides
+        let (display_name, text_color) =
+            if let Some(settings) = self.config.character_settings.get(character_name) {
+                let name = settings.alias.as_deref().unwrap_or(character_name);
+                let color = if let Some(hex_color) = &settings.override_text_color {
+                    crate::color::HexColor::parse(hex_color)
+                        .map(|c| c.argb32())
+                        .unwrap_or(self.config.text_color)
+                } else {
+                    self.config.text_color
+                };
+                (name, color)
+            } else {
+                (character_name, self.config.text_color)
+            };
+
         // Clear the overlay area (inside border)
         self.conn
             .render_composite(
@@ -190,10 +230,10 @@ impl<'a> OverlayRenderer<'a> {
                 0,
                 0,
                 0,
-                self.config.active_border_size as i16,
-                self.config.active_border_size as i16,
-                dimensions.width - self.config.active_border_size * 2,
-                dimensions.height - self.config.active_border_size * 2,
+                border_size as i16,
+                border_size as i16,
+                dimensions.width.saturating_sub(border_size * 2),
+                dimensions.height.saturating_sub(border_size * 2),
             )
             .context(format!(
                 "Failed to clear overlay area for '{}'",
@@ -211,7 +251,7 @@ impl<'a> OverlayRenderer<'a> {
                     .context("Failed to generate GC ID for X11 text")?;
 
                 // Convert ARGB color to X11 pixel value (strip alpha)
-                let fg_pixel = self.config.text_color & 0x00FFFFFF;
+                let fg_pixel = text_color & 0x00FFFFFF;
 
                 self.conn
                     .create_gc(
@@ -229,22 +269,24 @@ impl<'a> OverlayRenderer<'a> {
                     .image_text8(
                         self.overlay_pixmap,
                         gc,
-                        self.config.text_offset.x,
-                        self.config.text_offset.y + self.font_renderer.size() as i16, // Baseline adjustment
-                        character_name.as_bytes(),
+                        self.config.text_offset.x + border_size as i16,
+                        self.config.text_offset.y
+                            + border_size as i16
+                            + self.font_renderer.size() as i16, // Baseline adjustment
+                        display_name.as_bytes(),
                     )
                     .context(format!(
-                        "Failed to render X11 text for '{}'",
+                        "Failed to render text via X11 for '{}'",
                         character_name
                     ))?;
 
-                self.conn.free_gc(gc).context("Failed to free text GC")?;
+                self.conn.free_gc(gc)?;
             }
         } else {
             // Fontdue: pre-rendered bitmap
             let rendered = self
                 .font_renderer
-                .render_text(character_name, self.config.text_color)
+                .render_text(display_name, text_color)
                 .context(format!(
                     "Failed to render text '{}' with font renderer",
                     character_name
@@ -316,8 +358,8 @@ impl<'a> OverlayRenderer<'a> {
                         0,
                         0,
                         0,
-                        self.config.text_offset.x,
-                        self.config.text_offset.y,
+                        self.config.text_offset.x + border_size as i16,
+                        self.config.text_offset.y + border_size as i16,
                         rendered.width as u16,
                         rendered.height as u16,
                     )
@@ -346,13 +388,62 @@ impl<'a> OverlayRenderer<'a> {
         dimensions: Dimensions,
         focused: bool,
     ) -> Result<()> {
+        // Determine border settings (color, fill picture, and size)
+
+        let effective_size = self.calculate_border_size(character_name, focused);
+
+        let (fill_picture, temp_fill_id) = if let Some(settings) =
+            self.config.character_settings.get(character_name)
+        {
+            // Determine override color based on focus
+            let override_color_hex = if focused {
+                settings.override_active_border_color.as_ref()
+            } else {
+                settings.override_inactive_border_color.as_ref()
+            };
+
+            if let Some(hex) = override_color_hex {
+                if let Some(color) = crate::color::HexColor::parse(hex).map(|c| c.to_x11_color()) {
+                    let pid = self
+                        .conn
+                        .generate_id()
+                        .context("Failed to generate temp fill ID")?;
+                    self.conn
+                        .render_create_solid_fill(pid, color)
+                        .context("Failed to create temp fill")?;
+                    (pid, Some(pid))
+                } else {
+                    // Invalid override color, fallback to global color
+                    if focused {
+                        (self.active_border_fill, None)
+                    } else {
+                        (self.inactive_border_fill, None)
+                    }
+                }
+            } else {
+                // No color override, use global color
+                if focused {
+                    (self.active_border_fill, None)
+                } else {
+                    (self.inactive_border_fill, None)
+                }
+            }
+        } else {
+            // No settings at all, use global defaults
+            if focused {
+                (self.active_border_fill, None)
+            } else {
+                (self.inactive_border_fill, None)
+            }
+        };
+
         if focused {
             // Only render border fill if we actually have a border size
-            if self.config.active_border_size > 0 {
+            if effective_size > 0 {
                 self.conn
                     .render_composite(
                         PictOp::SRC,
-                        self.active_border_fill,
+                        fill_picture,
                         0u32,
                         self.overlay_picture,
                         0,
@@ -364,15 +455,35 @@ impl<'a> OverlayRenderer<'a> {
                         dimensions.width,
                         dimensions.height,
                     )
-                    .context(format!("Failed to render active border for '{}'", character_name))?;
+                    .context(format!(
+                        "Failed to render active border for '{}'",
+                        character_name
+                    ))?;
+            } else {
+                // Clear everything if size is 0
+                self.conn.render_composite(
+                    PictOp::CLEAR,
+                    self.overlay_picture, // src
+                    0u32,
+                    self.overlay_picture, // dst
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    0,
+                    dimensions.width,
+                    dimensions.height,
+                )?;
             }
         } else {
-            // Render inactive border if enabled, otherwise clear
-            if self.config.inactive_border_enabled && self.config.active_border_size > 0 {
+            // Inactive border logic
+            // Render inactive border if enabled (size > 0), otherwise clear
+            if self.config.inactive_border_enabled && effective_size > 0 {
                 self.conn
                     .render_composite(
                         PictOp::SRC,
-                        self.inactive_border_fill,
+                        fill_picture,
                         0u32,
                         self.overlay_picture,
                         0,
@@ -407,11 +518,19 @@ impl<'a> OverlayRenderer<'a> {
                     .context(format!("Failed to clear border for '{}'", character_name))?;
             }
         }
-        self.update_name(character_name, dimensions)
+
+        // Cleanup temp fill if created
+        if let Some(pid) = temp_fill_id {
+            self.conn.render_free_picture(pid)?;
+        }
+
+        // After drawing the border background (or clearing it), we must redraw the text hole and text
+        self.update_name(character_name, dimensions, effective_size)
             .context(format!(
                 "Failed to update name overlay after border change for '{}'",
                 character_name
             ))?;
+
         Ok(())
     }
 

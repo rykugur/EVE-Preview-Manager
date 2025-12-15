@@ -79,6 +79,11 @@ pub struct Profile {
     pub thumbnail_active_border_color: String,
     #[serde(default = "default_inactive_border_enabled")]
     pub thumbnail_inactive_border: bool,
+    #[serde(
+        alias = "thumbnail_inactive_border_size",
+        default = "default_border_size"
+    )]
+    pub thumbnail_inactive_border_size: u16,
     #[serde(default = "default_inactive_border_color")]
     pub thumbnail_inactive_border_color: String,
     pub thumbnail_text_size: u16,
@@ -146,6 +151,10 @@ pub struct Profile {
 }
 
 // Default value functions
+fn default_border_size() -> u16 {
+    crate::constants::defaults::border::SIZE
+}
+
 fn default_profile_name() -> String {
     crate::constants::defaults::behavior::PROFILE_NAME.to_string()
 }
@@ -225,6 +234,7 @@ fn default_profiles() -> Vec<Profile> {
         thumbnail_active_border_size: crate::constants::defaults::border::SIZE,
         thumbnail_active_border_color: crate::constants::defaults::border::ACTIVE_COLOR.to_string(),
         thumbnail_inactive_border: default_inactive_border_enabled(),
+        thumbnail_inactive_border_size: crate::constants::defaults::border::SIZE,
         thumbnail_inactive_border_color: default_inactive_border_color(),
         thumbnail_text_size: crate::constants::defaults::text::SIZE,
         thumbnail_text_x: crate::constants::defaults::text::OFFSET_X,
