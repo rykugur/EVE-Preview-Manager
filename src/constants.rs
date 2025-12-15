@@ -108,9 +108,6 @@ pub mod config {
 pub mod gui {
     use egui;
 
-
-
-
     /// Layout spacing
     pub const SECTION_SPACING: f32 = 15.0;
     pub const ITEM_SPACING: f32 = 8.0;

@@ -187,7 +187,7 @@ pub fn get_active_eve_window(
                 .try_into()
                 .context("Invalid _NET_ACTIVE_WINDOW property format")?,
         );
-        
+
         if is_window_eve(conn, active_window, atoms)
             .context(format!(
                 "Failed to check if active window {} is EVE client",

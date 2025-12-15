@@ -35,9 +35,9 @@ pub fn render(
         // Right side: Navigation Tabs
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.add_space(5.0); // Padding from right edge
-            
+
             // Render in reverse order (Right -> Left)
-            
+
             // 4. Characters
             if ui
                 .add(egui::Button::new("Characters").selected(*active_tab == GuiTab::Characters))

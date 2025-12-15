@@ -104,4 +104,3 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, _state: &mut BehaviorSetting
 
     changed
 }
-
