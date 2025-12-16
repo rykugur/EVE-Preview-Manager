@@ -417,6 +417,7 @@ fn render_overrides_section(
     ui.vertical(|ui| {
         // Active Border
         ui.horizontal(|ui| {
+            ui.label("Active Border:");
             let mut active_custom = settings.override_active_border_color.is_some()
                 || settings.override_active_border_size.is_some();
             let cached = state
@@ -424,7 +425,7 @@ fn render_overrides_section(
                 .entry(character_name.to_string())
                 .or_default();
 
-            if ui.checkbox(&mut active_custom, "Active Border").changed() {
+            if ui.checkbox(&mut active_custom, "Enabled").changed() {
                 if active_custom {
                     if settings.override_active_border_color.is_none() {
                         settings.override_active_border_color = cached
@@ -445,55 +446,52 @@ fn render_overrides_section(
                 }
                 *changed = true;
             }
+        });
 
-            if active_custom {
+        // Active Border Settings (Indented)
+        if settings.override_active_border_color.is_some()
+            || settings.override_active_border_size.is_some()
+        {
+            ui.indent("active_border_details", |ui| {
                 // Color
-                let mut color_override = settings.override_active_border_color.is_some();
-                if ui.checkbox(&mut color_override, "Color").changed() {
-                    if color_override {
-                        settings.override_active_border_color = cached
-                            .active_border_color
-                            .clone()
-                            .or_else(|| Some(defaults.active_border_color.clone()));
-                    } else {
-                        cached.active_border_color = settings.override_active_border_color.clone();
-                        settings.override_active_border_color = None;
+                ui.horizontal(|ui| {
+                    ui.label("Color:");
+                    let mut color_str = settings
+                        .override_active_border_color
+                        .clone()
+                        .unwrap_or_default();
+                    let text_edit = egui::TextEdit::singleline(&mut color_str).desired_width(100.0);
+
+                    if ui.add(text_edit).changed() {
+                        settings.override_active_border_color = Some(color_str.clone());
+                        *changed = true;
                     }
-                    *changed = true;
-                }
-                if let Some(ref mut hex_color) = settings.override_active_border_color
-                    && let Ok(mut color) = crate::gui::utils::parse_hex_color(hex_color)
-                    && ui.color_edit_button_srgba(&mut color).changed()
-                {
-                    *hex_color = crate::gui::utils::format_hex_color(color);
-                    cached.active_border_color = Some(hex_color.clone());
-                    *changed = true;
-                }
+
+                    // Color picker button
+                    if let Ok(mut color) = crate::gui::utils::parse_hex_color(&color_str)
+                        && ui.color_edit_button_srgba(&mut color).changed()
+                    {
+                        let new_hex = crate::gui::utils::format_hex_color(color);
+                        settings.override_active_border_color = Some(new_hex);
+                        *changed = true;
+                    }
+                });
 
                 // Size
-                let mut size_override = settings.override_active_border_size.is_some();
-                if ui.checkbox(&mut size_override, "Size").changed() {
-                    if size_override {
-                        settings.override_active_border_size = cached
-                            .active_border_size
-                            .or(Some(defaults.active_border_size));
-                    } else {
-                        cached.active_border_size = settings.override_active_border_size;
-                        settings.override_active_border_size = None;
+                ui.horizontal(|ui| {
+                    ui.label("Size:");
+                    if let Some(ref mut size) = settings.override_active_border_size
+                        && ui.add(egui::DragValue::new(size).range(1..=20)).changed()
+                    {
+                        *changed = true;
                     }
-                    *changed = true;
-                }
-                if let Some(ref mut size) = settings.override_active_border_size
-                    && ui.add(egui::DragValue::new(size).range(1..=20)).changed()
-                {
-                    cached.active_border_size = Some(*size);
-                    *changed = true;
-                }
-            }
-        });
+                });
+            });
+        }
 
         // Inactive Border
         ui.horizontal(|ui| {
+            ui.label("Inactive Border:");
             let mut inactive_custom = settings.override_inactive_border_color.is_some()
                 || settings.override_inactive_border_size.is_some();
             let cached = state
@@ -501,10 +499,7 @@ fn render_overrides_section(
                 .entry(character_name.to_string())
                 .or_default();
 
-            if ui
-                .checkbox(&mut inactive_custom, "Inactive Border")
-                .changed()
-            {
+            if ui.checkbox(&mut inactive_custom, "Enabled").changed() {
                 if inactive_custom {
                     if settings.override_inactive_border_color.is_none() {
                         settings.override_inactive_border_color = cached
@@ -525,64 +520,58 @@ fn render_overrides_section(
                 }
                 *changed = true;
             }
+        });
 
-            if inactive_custom {
+        // Inactive Border Settings (Indented)
+        if settings.override_inactive_border_color.is_some()
+            || settings.override_inactive_border_size.is_some()
+        {
+            ui.indent("inactive_border_details", |ui| {
                 // Color
-                let mut color_override = settings.override_inactive_border_color.is_some();
-                if ui.checkbox(&mut color_override, "Color").changed() {
-                    if color_override {
-                        settings.override_inactive_border_color = cached
-                            .inactive_border_color
-                            .clone()
-                            .or_else(|| Some(defaults.inactive_border_color.clone()));
-                    } else {
-                        cached.inactive_border_color =
-                            settings.override_inactive_border_color.clone();
-                        settings.override_inactive_border_color = None;
-                    }
-                    *changed = true;
-                }
+                ui.horizontal(|ui| {
+                    ui.label("Color:");
+                    let mut color_str = settings
+                        .override_inactive_border_color
+                        .clone()
+                        .unwrap_or_default();
+                    let text_edit = egui::TextEdit::singleline(&mut color_str).desired_width(100.0);
 
-                if let Some(ref mut hex_color) = settings.override_inactive_border_color
-                    && let Ok(mut color) = crate::gui::utils::parse_hex_color(hex_color)
-                    && ui.color_edit_button_srgba(&mut color).changed()
-                {
-                    *hex_color = crate::gui::utils::format_hex_color(color);
-                    cached.inactive_border_color = Some(hex_color.clone());
-                    *changed = true;
-                }
+                    if ui.add(text_edit).changed() {
+                        settings.override_inactive_border_color = Some(color_str.clone());
+                        *changed = true;
+                    }
+
+                    if let Ok(mut color) = crate::gui::utils::parse_hex_color(&color_str)
+                        && ui.color_edit_button_srgba(&mut color).changed()
+                    {
+                        let new_hex = crate::gui::utils::format_hex_color(color);
+                        settings.override_inactive_border_color = Some(new_hex);
+                        *changed = true;
+                    }
+                });
 
                 // Size
-                let mut size_override = settings.override_inactive_border_size.is_some();
-                if ui.checkbox(&mut size_override, "Size").changed() {
-                    if size_override {
-                        settings.override_inactive_border_size = cached
-                            .inactive_border_size
-                            .or(Some(defaults.inactive_border_size));
-                    } else {
-                        cached.inactive_border_size = settings.override_inactive_border_size;
-                        settings.override_inactive_border_size = None;
+                ui.horizontal(|ui| {
+                    ui.label("Size:");
+                    if let Some(ref mut size) = settings.override_inactive_border_size
+                        && ui.add(egui::DragValue::new(size).range(1..=20)).changed()
+                    {
+                        *changed = true;
                     }
-                    *changed = true;
-                }
-                if let Some(ref mut size) = settings.override_inactive_border_size
-                    && ui.add(egui::DragValue::new(size).range(1..=20)).changed()
-                {
-                    cached.inactive_border_size = Some(*size);
-                    *changed = true;
-                }
-            }
-        });
+                });
+            });
+        }
 
         // Text Color
         ui.horizontal(|ui| {
+            ui.label("Text Color:");
             let mut text_color_enabled = settings.override_text_color.is_some();
             let cached = state
                 .cached_overrides
                 .entry(character_name.to_string())
                 .or_default();
 
-            if ui.checkbox(&mut text_color_enabled, "Text Color").changed() {
+            if ui.checkbox(&mut text_color_enabled, "Enabled").changed() {
                 if text_color_enabled {
                     settings.override_text_color = cached
                         .text_color
@@ -594,16 +583,31 @@ fn render_overrides_section(
                 }
                 *changed = true;
             }
-
-            if let Some(ref mut hex_color) = settings.override_text_color
-                && let Ok(mut color) = crate::gui::utils::parse_hex_color(hex_color)
-                && ui.color_edit_button_srgba(&mut color).changed()
-            {
-                *hex_color = crate::gui::utils::format_hex_color(color);
-                cached.text_color = Some(hex_color.clone());
-                *changed = true;
-            }
         });
+
+        // Text Color Settings (Indented)
+        if settings.override_text_color.is_some() {
+            ui.indent("text_color_details", |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Color:");
+                    let mut color_str = settings.override_text_color.clone().unwrap_or_default();
+                    let text_edit = egui::TextEdit::singleline(&mut color_str).desired_width(100.0);
+
+                    if ui.add(text_edit).changed() {
+                        settings.override_text_color = Some(color_str.clone());
+                        *changed = true;
+                    }
+
+                    if let Ok(mut color) = crate::gui::utils::parse_hex_color(&color_str)
+                        && ui.color_edit_button_srgba(&mut color).changed()
+                    {
+                        let new_hex = crate::gui::utils::format_hex_color(color);
+                        settings.override_text_color = Some(new_hex);
+                        *changed = true;
+                    }
+                });
+            });
+        }
     });
 }
 
