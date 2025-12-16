@@ -47,21 +47,21 @@ pub fn render(
             }
             ui.add_space(5.0);
 
-            // 3. Hotkeys
-            if ui
-                .add(egui::Button::new("Hotkeys").selected(*active_tab == GuiTab::Hotkeys))
-                .clicked()
-            {
-                *active_tab = GuiTab::Hotkeys;
-            }
-            ui.add_space(5.0);
-
             // 2. Appearance
             if ui
                 .add(egui::Button::new("Appearance").selected(*active_tab == GuiTab::Appearance))
                 .clicked()
             {
                 *active_tab = GuiTab::Appearance;
+            }
+            ui.add_space(5.0);
+
+            // 3. Hotkeys
+            if ui
+                .add(egui::Button::new("Hotkeys").selected(*active_tab == GuiTab::Hotkeys))
+                .clicked()
+            {
+                *active_tab = GuiTab::Hotkeys;
             }
             ui.add_space(5.0);
 
