@@ -4,16 +4,8 @@ use crate::config::profile::Profile;
 use crate::constants::gui::*;
 use eframe::egui;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum EditorMode {
-    TextEdit,
-    DragDrop,
-}
-
 /// State for character management UI
 pub struct CharactersState {
-    cycle_group_text: String,
-    editor_mode: EditorMode,
     show_add_characters_popup: bool,
     character_selections: std::collections::HashMap<String, bool>,
     // Track expanded rows for editing: character_name -> expanded
@@ -34,8 +26,6 @@ struct CachedOverrides {
 impl CharactersState {
     pub fn new() -> Self {
         Self {
-            cycle_group_text: String::new(),
-            editor_mode: EditorMode::DragDrop,
             show_add_characters_popup: false,
             character_selections: std::collections::HashMap::new(),
             expanded_rows: std::collections::HashMap::new(),
@@ -43,45 +33,9 @@ impl CharactersState {
         }
     }
 
-    /// Load cycle group from profile into text buffer with hotkey suffixes
-    pub fn load_from_profile(&mut self, profile: &Profile) {
+    /// Load cycle group from profile - no-op for now as we read directly
+    pub fn load_from_profile(&mut self, _profile: &Profile) {
         self.cached_overrides.clear();
-        self.cycle_group_text = profile
-            .hotkey_cycle_group
-            .iter()
-            .map(|char_name| {
-                if let Some(binding) = profile.character_hotkeys.get(char_name) {
-                    format!("{} [{}]", char_name, binding.display_name())
-                } else {
-                    char_name.clone()
-                }
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-    }
-
-    /// Parse text buffer back into profile's cycle group and character hotkeys
-    /// Format: "CharacterName \[HOTKEY\]" or just "CharacterName"
-    fn save_to_profile(&self, profile: &mut Profile) {
-        profile.hotkey_cycle_group = self
-            .cycle_group_text
-            .lines()
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .map(|line| {
-                // Parse "CharacterName [HOTKEY]" format
-                if let Some(bracket_pos) = line.rfind('[') {
-                    // Extract character name before bracket
-                    line[..bracket_pos].trim().to_string()
-                } else {
-                    line.to_string()
-                }
-            })
-            .filter(|s| !s.is_empty()) // Filter again after extracting name (handles " [HOTKEY]" case)
-            .collect();
-
-        // Note: Hotkey bindings are updated through the Bind button, not text parsing
-        // Text mode shows hotkeys but doesn't allow editing them
     }
 }
 
@@ -101,15 +55,556 @@ pub fn ui(
 ) -> bool {
     let mut changed = false;
 
-    ui.group(|ui| {
-        render_unified_cycle_group_tab(ui, profile, state, hotkey_state, &mut changed);
-    });
+    render_two_column_layout(ui, profile, state, hotkey_state, &mut changed);
 
     if state.show_add_characters_popup {
         render_add_characters_modal(ui.ctx(), profile, state, &mut changed);
     }
 
+    // Call shared modal rendering logic if dialog is active
+    if hotkey_state.is_dialog_open() {
+        changed |= crate::gui::components::hotkey_settings::render_key_capture_modal(
+            ui,
+            profile,
+            hotkey_state,
+        );
+    }
+
     changed
+}
+
+fn render_two_column_layout(
+    ui: &mut egui::Ui,
+    profile: &mut Profile,
+    state: &mut CharactersState,
+    hotkey_state: &mut crate::gui::components::hotkey_settings::HotkeySettingsState,
+    changed: &mut bool,
+) {
+    // Two columns: Left (Editor) 60%, Right (Cycle Group) 40%
+    let available_width = ui.available_width();
+    let left_width = (available_width * 0.55).max(300.0);
+
+    ui.horizontal_top(|ui| {
+        // --- Left Column: Character Editor ---
+        ui.allocate_ui(egui::vec2(left_width, ui.available_height()), |ui| {
+            ui.vertical(|ui| {
+                render_character_editor_column(ui, profile, state, hotkey_state, changed);
+            });
+        });
+
+        ui.add_space(ITEM_SPACING);
+        ui.separator();
+        ui.add_space(ITEM_SPACING);
+
+        // --- Right Column: Cycle Group ---
+        // Using remaining width for right column
+        ui.allocate_ui(
+            egui::vec2(ui.available_width(), ui.available_height()),
+            |ui| {
+                ui.vertical(|ui| {
+                    render_cycle_group_column(ui, profile, state, changed);
+                });
+            },
+        );
+    });
+}
+
+struct ThemeDefaults {
+    active_border_color: String,
+    active_border_size: u16,
+    inactive_border_color: String,
+    inactive_border_size: u16,
+    text_color: String,
+}
+
+fn render_character_editor_column(
+    ui: &mut egui::Ui,
+    profile: &mut Profile,
+    state: &mut CharactersState,
+    hotkey_state: &mut crate::gui::components::hotkey_settings::HotkeySettingsState,
+    changed: &mut bool,
+) {
+    ui.heading("Character Manager");
+    ui.label(
+        egui::RichText::new("Edit settings for all known characters.")
+            .weak()
+            .small(),
+    );
+    ui.add_space(ITEM_SPACING);
+
+    // Capture defaults before mutable borrow of profile
+    let defaults = ThemeDefaults {
+        active_border_color: profile.thumbnail_active_border_color.clone(),
+        active_border_size: profile.thumbnail_active_border_size,
+        inactive_border_color: profile.thumbnail_inactive_border_color.clone(),
+        inactive_border_size: profile.thumbnail_inactive_border_size,
+        text_color: profile.thumbnail_text_color.clone(),
+    };
+
+    egui::ScrollArea::vertical()
+        .id_salt("char_editor_scroll")
+        .show(ui, |ui| {
+            // Get all known characters (keys from character_thumbnails)
+            let mut char_names: Vec<String> =
+                profile.character_thumbnails.keys().cloned().collect();
+            // Case-insensitive sort
+            char_names.sort_by_key(|a| a.to_lowercase());
+
+            for character in char_names {
+                // Ensure CharacterSettings entry exists (it should, since we pulled keys from it,
+                // but good for safety if we change source later)
+                let settings = profile
+                    .character_thumbnails
+                    .entry(character.clone())
+                    .or_insert_with(|| crate::types::CharacterSettings::new(0, 0, 0, 0));
+
+                let is_expanded = *state.expanded_rows.get(&character).unwrap_or(&false);
+
+                // Minimalist Layout
+                ui.horizontal(|ui| {
+                    let icon = if is_expanded { "v" } else { ">" };
+                    if ui.small_button(icon).clicked() {
+                        state.expanded_rows.insert(character.clone(), !is_expanded);
+                    }
+
+                    ui.label(&character);
+
+                    // Show Alias in parentheses
+                    if let Some(alias) = &settings.alias
+                        && !alias.is_empty()
+                    {
+                        ui.label(egui::RichText::new(format!("({})", alias)));
+                    }
+
+                    // Show Hotkey in brackets
+                    if let Some(binding) = profile.character_hotkeys.get(&character) {
+                        ui.label(egui::RichText::new(format!("[{}]", binding.display_name())));
+                    }
+
+                    // Add padding on the right edge
+                    ui.add_space(20.0);
+                });
+
+                if is_expanded {
+                    ui.indent("details", |ui| {
+                        ui.add_space(4.0);
+
+                        egui::Grid::new(format!("grid_edit_{}", character))
+                            .num_columns(2)
+                            .spacing([10.0, 4.0])
+                            .show(ui, |ui| {
+                                // Alias
+                                ui.label("Alias:");
+                                let mut alias = settings.alias.clone().unwrap_or_default();
+                                if ui
+                                    .add(
+                                        egui::TextEdit::singleline(&mut alias)
+                                            .hint_text("Display Name"),
+                                    )
+                                    .changed()
+                                {
+                                    settings.alias =
+                                        if alias.is_empty() { None } else { Some(alias) };
+                                    *changed = true;
+                                }
+                                ui.end_row();
+
+                                // Notes
+                                ui.label("Notes:");
+                                let mut notes = settings.notes.clone().unwrap_or_default();
+                                if ui
+                                    .add(
+                                        egui::TextEdit::multiline(&mut notes)
+                                            .desired_rows(2)
+                                            .hint_text("Optional notes..."),
+                                    )
+                                    .changed()
+                                {
+                                    settings.notes =
+                                        if notes.is_empty() { None } else { Some(notes) };
+                                    *changed = true;
+                                }
+                                ui.end_row();
+
+                                // Hotkey Binding
+                                ui.label("Hotkey:");
+                                ui.horizontal(|ui| {
+                                    if let Some(binding) = profile.character_hotkeys.get(&character)
+                                    {
+                                        ui.label(format!("[{}]", binding.display_name()));
+                                        if ui.small_button("Clear").clicked() {
+                                            profile.character_hotkeys.remove(&character);
+                                            *changed = true;
+                                        }
+                                    } else {
+                                        let bind_text = if hotkey_state.is_capturing_for(&character)
+                                        {
+                                            "Capturing..."
+                                        } else {
+                                            "⌨ Bind"
+                                        };
+                                        if ui.button(bind_text).clicked() {
+                                            hotkey_state.start_key_capture_for_character(
+                                                character.clone(),
+                                                profile.hotkey_backend,
+                                            );
+                                        }
+                                    }
+                                });
+                                ui.end_row();
+
+                                // Overrides Section
+                                render_overrides_section(
+                                    ui, &character, settings, &defaults, state, changed,
+                                );
+                            });
+                        ui.add_space(8.0);
+                    });
+                }
+                ui.add_space(4.0); // Small space between items instead of large ITEM_SPACING
+            }
+
+            if profile.character_thumbnails.is_empty() {
+                ui.label(
+                    egui::RichText::new(
+                        "No characters found.\nLog in to EVE Online clients to populate this list.",
+                    )
+                    .weak()
+                    .italics(),
+                );
+            }
+        });
+}
+
+fn render_cycle_group_column(
+    ui: &mut egui::Ui,
+    profile: &mut Profile,
+    state: &mut CharactersState,
+    changed: &mut bool,
+) {
+    // Header Row with Add Button
+    ui.horizontal(|ui| {
+        ui.heading("Cycle Group");
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button("➕ Add").clicked() {
+                state.show_add_characters_popup = true;
+                // Initialize selections for all available characters (unchecked by default)
+                state.character_selections.clear();
+                for char_name in profile.character_thumbnails.keys() {
+                    state.character_selections.insert(char_name.clone(), false);
+                }
+            }
+        });
+    });
+    ui.label(
+        egui::RichText::new("Order of characters when cycling.")
+            .weak()
+            .small(),
+    );
+    ui.add_space(ITEM_SPACING);
+
+    // Draggable List
+    egui::ScrollArea::vertical()
+        .id_salt("cycle_group_scroll")
+        .show(ui, |ui| {
+            let mut from_idx = None;
+            let mut to_idx = None;
+            let mut to_delete = None;
+
+            let frame = egui::Frame::default()
+                .inner_margin(4.0)
+                .stroke(ui.visuals().widgets.noninteractive.bg_stroke);
+
+            let (_, dropped_payload) = ui.dnd_drop_zone::<usize, ()>(frame, |ui| {
+                ui.set_min_height(100.0);
+
+                for (row_idx, character) in profile.hotkey_cycle_group.iter().enumerate() {
+                    let item_id = egui::Id::new("cycle_group_item").with(row_idx);
+
+                    let response = ui
+                        .horizontal(|ui| {
+                            let drag_response = ui
+                                .dnd_drag_source(item_id, row_idx, |ui| {
+                                    ui.horizontal(|ui| {
+                                        ui.label(egui::RichText::new("::").weak());
+
+                                        ui.label(character);
+                                    });
+                                })
+                                .response;
+
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if ui
+                                        .small_button("✖")
+                                        .on_hover_text("Remove from cycle group")
+                                        .clicked()
+                                    {
+                                        to_delete = Some(row_idx);
+                                        *changed = true;
+                                    }
+                                },
+                            );
+                            drag_response
+                        })
+                        .inner;
+
+                    // Detect drops
+                    if let (Some(pointer), Some(hovered_payload)) = (
+                        ui.input(|i| i.pointer.interact_pos()),
+                        response.dnd_hover_payload::<usize>(),
+                    ) {
+                        let rect = response.rect;
+                        let stroke = egui::Stroke::new(2.0, ui.visuals().selection.stroke.color);
+
+                        let insert_row_idx = if *hovered_payload == row_idx {
+                            ui.painter().hline(rect.x_range(), rect.center().y, stroke);
+                            row_idx
+                        } else if pointer.y < rect.center().y {
+                            ui.painter().hline(rect.x_range(), rect.top(), stroke);
+                            row_idx
+                        } else {
+                            ui.painter().hline(rect.x_range(), rect.bottom(), stroke);
+                            row_idx + 1
+                        };
+
+                        if let Some(dragged_payload) = response.dnd_release_payload::<usize>() {
+                            from_idx = Some(*dragged_payload);
+                            to_idx = Some(insert_row_idx);
+                            *changed = true;
+                        }
+                    }
+                }
+            });
+
+            if let Some(dragged_payload) = dropped_payload {
+                from_idx = Some(*dragged_payload);
+                to_idx = Some(profile.hotkey_cycle_group.len());
+                *changed = true;
+            }
+
+            if let Some(idx) = to_delete {
+                profile.hotkey_cycle_group.remove(idx);
+            }
+
+            if let (Some(from), Some(mut to)) = (from_idx, to_idx) {
+                if from < to {
+                    to -= 1;
+                }
+                if from != to {
+                    let item = profile.hotkey_cycle_group.remove(from);
+                    let insert_idx = to.min(profile.hotkey_cycle_group.len());
+                    profile.hotkey_cycle_group.insert(insert_idx, item);
+                }
+            }
+
+            if profile.hotkey_cycle_group.is_empty() {
+                ui.label(egui::RichText::new("No characters in cycle group.").weak());
+            }
+        });
+}
+
+fn render_overrides_section(
+    ui: &mut egui::Ui,
+    character_name: &str,
+    settings: &mut crate::types::CharacterSettings,
+    defaults: &ThemeDefaults,
+    state: &mut CharactersState,
+    changed: &mut bool,
+) {
+    ui.label("Overrides:");
+    ui.vertical(|ui| {
+        // Active Border
+        ui.horizontal(|ui| {
+            let mut active_custom = settings.override_active_border_color.is_some()
+                || settings.override_active_border_size.is_some();
+            let cached = state
+                .cached_overrides
+                .entry(character_name.to_string())
+                .or_default();
+
+            if ui.checkbox(&mut active_custom, "Active Border").changed() {
+                if active_custom {
+                    if settings.override_active_border_color.is_none() {
+                        settings.override_active_border_color = cached
+                            .active_border_color
+                            .clone()
+                            .or_else(|| Some(defaults.active_border_color.clone()));
+                    }
+                    if settings.override_active_border_size.is_none() {
+                        settings.override_active_border_size = cached
+                            .active_border_size
+                            .or(Some(defaults.active_border_size));
+                    }
+                } else {
+                    cached.active_border_color = settings.override_active_border_color.clone();
+                    cached.active_border_size = settings.override_active_border_size;
+                    settings.override_active_border_color = None;
+                    settings.override_active_border_size = None;
+                }
+                *changed = true;
+            }
+
+            if active_custom {
+                // Color
+                let mut color_override = settings.override_active_border_color.is_some();
+                if ui.checkbox(&mut color_override, "Color").changed() {
+                    if color_override {
+                        settings.override_active_border_color = cached
+                            .active_border_color
+                            .clone()
+                            .or_else(|| Some(defaults.active_border_color.clone()));
+                    } else {
+                        cached.active_border_color = settings.override_active_border_color.clone();
+                        settings.override_active_border_color = None;
+                    }
+                    *changed = true;
+                }
+                if let Some(ref mut hex_color) = settings.override_active_border_color
+                    && let Ok(mut color) = crate::gui::utils::parse_hex_color(hex_color)
+                    && ui.color_edit_button_srgba(&mut color).changed()
+                {
+                    *hex_color = crate::gui::utils::format_hex_color(color);
+                    cached.active_border_color = Some(hex_color.clone());
+                    *changed = true;
+                }
+
+                // Size
+                let mut size_override = settings.override_active_border_size.is_some();
+                if ui.checkbox(&mut size_override, "Size").changed() {
+                    if size_override {
+                        settings.override_active_border_size = cached
+                            .active_border_size
+                            .or(Some(defaults.active_border_size));
+                    } else {
+                        cached.active_border_size = settings.override_active_border_size;
+                        settings.override_active_border_size = None;
+                    }
+                    *changed = true;
+                }
+                if let Some(ref mut size) = settings.override_active_border_size
+                    && ui.add(egui::DragValue::new(size).range(1..=20)).changed()
+                {
+                    cached.active_border_size = Some(*size);
+                    *changed = true;
+                }
+            }
+        });
+
+        // Inactive Border
+        ui.horizontal(|ui| {
+            let mut inactive_custom = settings.override_inactive_border_color.is_some()
+                || settings.override_inactive_border_size.is_some();
+            let cached = state
+                .cached_overrides
+                .entry(character_name.to_string())
+                .or_default();
+
+            if ui
+                .checkbox(&mut inactive_custom, "Inactive Border")
+                .changed()
+            {
+                if inactive_custom {
+                    if settings.override_inactive_border_color.is_none() {
+                        settings.override_inactive_border_color = cached
+                            .inactive_border_color
+                            .clone()
+                            .or_else(|| Some(defaults.inactive_border_color.clone()));
+                    }
+                    if settings.override_inactive_border_size.is_none() {
+                        settings.override_inactive_border_size = cached
+                            .inactive_border_size
+                            .or(Some(defaults.inactive_border_size));
+                    }
+                } else {
+                    cached.inactive_border_color = settings.override_inactive_border_color.clone();
+                    cached.inactive_border_size = settings.override_inactive_border_size;
+                    settings.override_inactive_border_color = None;
+                    settings.override_inactive_border_size = None;
+                }
+                *changed = true;
+            }
+
+            if inactive_custom {
+                // Color
+                let mut color_override = settings.override_inactive_border_color.is_some();
+                if ui.checkbox(&mut color_override, "Color").changed() {
+                    if color_override {
+                        settings.override_inactive_border_color = cached
+                            .inactive_border_color
+                            .clone()
+                            .or_else(|| Some(defaults.inactive_border_color.clone()));
+                    } else {
+                        cached.inactive_border_color =
+                            settings.override_inactive_border_color.clone();
+                        settings.override_inactive_border_color = None;
+                    }
+                    *changed = true;
+                }
+
+                if let Some(ref mut hex_color) = settings.override_inactive_border_color
+                    && let Ok(mut color) = crate::gui::utils::parse_hex_color(hex_color)
+                    && ui.color_edit_button_srgba(&mut color).changed()
+                {
+                    *hex_color = crate::gui::utils::format_hex_color(color);
+                    cached.inactive_border_color = Some(hex_color.clone());
+                    *changed = true;
+                }
+
+                // Size
+                let mut size_override = settings.override_inactive_border_size.is_some();
+                if ui.checkbox(&mut size_override, "Size").changed() {
+                    if size_override {
+                        settings.override_inactive_border_size = cached
+                            .inactive_border_size
+                            .or(Some(defaults.inactive_border_size));
+                    } else {
+                        cached.inactive_border_size = settings.override_inactive_border_size;
+                        settings.override_inactive_border_size = None;
+                    }
+                    *changed = true;
+                }
+                if let Some(ref mut size) = settings.override_inactive_border_size
+                    && ui.add(egui::DragValue::new(size).range(1..=20)).changed()
+                {
+                    cached.inactive_border_size = Some(*size);
+                    *changed = true;
+                }
+            }
+        });
+
+        // Text Color
+        ui.horizontal(|ui| {
+            let mut text_color_enabled = settings.override_text_color.is_some();
+            let cached = state
+                .cached_overrides
+                .entry(character_name.to_string())
+                .or_default();
+
+            if ui.checkbox(&mut text_color_enabled, "Text Color").changed() {
+                if text_color_enabled {
+                    settings.override_text_color = cached
+                        .text_color
+                        .clone()
+                        .or_else(|| Some(defaults.text_color.clone()));
+                } else {
+                    cached.text_color = settings.override_text_color.clone();
+                    settings.override_text_color = None;
+                }
+                *changed = true;
+            }
+
+            if let Some(ref mut hex_color) = settings.override_text_color
+                && let Ok(mut color) = crate::gui::utils::parse_hex_color(hex_color)
+                && ui.color_edit_button_srgba(&mut color).changed()
+            {
+                *hex_color = crate::gui::utils::format_hex_color(color);
+                cached.text_color = Some(hex_color.clone());
+                *changed = true;
+            }
+        });
+    });
 }
 
 fn render_add_characters_modal(
@@ -198,10 +693,6 @@ fn render_add_characters_modal(
 
                     if added_any {
                         *changed = true;
-                        // If we are in text mode, sync the text buffer
-                        if state.editor_mode == EditorMode::TextEdit {
-                            state.load_from_profile(profile);
-                        }
                     }
                     state.show_add_characters_popup = false;
                 }
@@ -214,487 +705,5 @@ fn render_add_characters_modal(
 
     if !open {
         state.show_add_characters_popup = false;
-    }
-}
-
-/// Renders the cycle group editor with integrated per-character hotkey bindings
-fn render_unified_cycle_group_tab(
-    ui: &mut egui::Ui,
-    profile: &mut Profile,
-    state: &mut CharactersState,
-    hotkey_state: &mut crate::gui::components::hotkey_settings::HotkeySettingsState,
-    changed: &mut bool,
-) {
-    ui.label(egui::RichText::new("Character Manager").strong());
-    ui.add_space(ITEM_SPACING);
-
-    // Mode selector
-    ui.horizontal(|ui| {
-        ui.label("Editor Mode:");
-
-        egui::ComboBox::from_id_salt("cycle_editor_mode")
-            .selected_text(match state.editor_mode {
-                EditorMode::TextEdit => "Text Editor", // Simple multi-line text area for bulk editing
-                EditorMode::DragDrop => "Interactive List", // Interactive list for visual reordering & details
-            })
-            .show_ui(ui, |ui| {
-                if ui
-                    .selectable_value(&mut state.editor_mode, EditorMode::TextEdit, "Text Editor")
-                    .clicked()
-                {
-                    // When switching to text mode, sync from profile
-                    state.load_from_profile(profile);
-                }
-                if ui
-                    .selectable_value(
-                        &mut state.editor_mode,
-                        EditorMode::DragDrop,
-                        "Interactive List",
-                    )
-                    .clicked()
-                {
-                    // When switching to drag mode, sync text to profile first
-                    state.save_to_profile(profile);
-                }
-            });
-
-        // Add button to import active characters
-        if ui.button("➕ Add").clicked() {
-            state.show_add_characters_popup = true;
-            // Initialize selections for all available characters (unchecked by default)
-            state.character_selections.clear();
-            for char_name in profile.character_thumbnails.keys() {
-                state.character_selections.insert(char_name.clone(), false);
-            }
-        }
-    });
-
-    ui.add_space(ITEM_SPACING);
-
-    match state.editor_mode {
-        EditorMode::TextEdit => {
-            ui.label("Enter character names (one per line, in cycle order):");
-
-            ui.add_space(ITEM_SPACING / 2.0);
-
-            // Multi-line text editor for cycle group
-            let text_edit = egui::TextEdit::multiline(&mut state.cycle_group_text)
-                .desired_rows(8)
-                .desired_width(f32::INFINITY)
-                .hint_text("Character Name 1\nCharacter Name 2\nCharacter Name 3");
-
-            if ui.add(text_edit).changed() {
-                // Update profile's cycle_group on every change
-                state.save_to_profile(profile);
-                *changed = true;
-            }
-        }
-
-        EditorMode::DragDrop => {
-            ui.label("Drag items to reorder, click ⚙ to edit details:");
-
-            ui.add_space(ITEM_SPACING / 2.0);
-
-            // Track drag-drop operations
-            let mut from_idx = None;
-            let mut to_idx = None;
-            let mut to_delete = None;
-
-            let frame = egui::Frame::default()
-                .inner_margin(4.0)
-                .stroke(ui.visuals().widgets.noninteractive.bg_stroke);
-
-            // Drag-drop zone containing all items
-            let (_, dropped_payload) = ui.dnd_drop_zone::<usize, ()>(frame, |ui| {
-                ui.set_min_height(100.0);
-
-                for (row_idx, character) in profile.hotkey_cycle_group.iter().enumerate() {
-                    let item_id = egui::Id::new("cycle_character").with(row_idx);
-                    let is_expanded = *state.expanded_rows.get(character).unwrap_or(&false);
-
-                    // Build row with draggable handle + name, and non-draggable buttons
-                    let response = ui
-                        .horizontal(|ui| {
-                            // Draggable section: handle + character name
-                            let drag_response = ui
-                                .dnd_drag_source(item_id, row_idx, |ui| {
-                                    ui.label(egui::RichText::new("::").weak());
-
-                                    // Show alias if set, otherwise character name
-                                    let display_name = if let Some(settings) = profile.character_thumbnails.get(character)
-                                        && let Some(alias) = &settings.alias
-                                        && !alias.is_empty()
-                                    {
-                                        format!("{} ({})", alias, character)
-                                    } else {
-                                        character.clone()
-                                    };
-
-                                    ui.label(display_name);
-                                })
-                                .response;
-
-                            // Right-aligned buttons (not draggable)
-                            ui.with_layout(
-                                egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| {
-                                    // Remove button
-                                    if ui
-                                        .small_button("✖")
-                                        .on_hover_text("Remove from cycle group")
-                                        .clicked()
-                                    {
-                                        to_delete = Some(row_idx);
-                                        *changed = true;
-                                    }
-
-                                    // Expand/Collapse button
-                                    let expand_text = if is_expanded { "v" } else { ">" };
-                                    if ui.small_button(expand_text).on_hover_text("Edit details").clicked() {
-                                        let new_state = !is_expanded;
-                                        state.expanded_rows.insert(character.clone(), new_state);
-                                    }
-
-                                    // Quick hotkey indicator
-                                    if let Some(binding) = profile.character_hotkeys.get(character) {
-                                        ui.label(
-                                            egui::RichText::new(format!(
-                                                "[{}]",
-                                                binding.display_name()
-                                            ))
-                                            .weak(),
-                                        );
-                                    }
-                                },
-                            );
-
-                            drag_response
-                        })
-                        .inner;
-
-                    // Expanded Details Section
-                    if is_expanded {
-                        egui::Frame::new()
-                            .fill(ui.visuals().faint_bg_color)
-                            .inner_margin(8.0)
-                            .show(ui, |ui| {
-                                egui::Grid::new(format!("grid_{}", row_idx))
-                                    .num_columns(2)
-                                    .spacing([10.0, 4.0])
-                                    // Removed striped(true) as we now have a solid background
-                                    .show(ui, |ui| {
-                                        // Ensure CharacterSettings entry exists
-                                        let settings = profile.character_thumbnails.entry(character.clone())
-                                            .or_insert_with(|| crate::types::CharacterSettings::new(0, 0, 0, 0));
-
-                                        // Alias
-                                        ui.label("Alias:");
-                                        let mut alias = settings.alias.clone().unwrap_or_default();
-                                        if ui.add(egui::TextEdit::singleline(&mut alias).hint_text("Display Name")).changed() {
-                                            settings.alias = if alias.is_empty() { None } else { Some(alias) };
-                                            *changed = true;
-                                        }
-                                        ui.end_row();
-
-                                        // Notes
-                                        ui.label("Notes:");
-                                        let mut notes = settings.notes.clone().unwrap_or_default();
-                                        if ui.add(egui::TextEdit::multiline(&mut notes).desired_rows(2).hint_text("Optional notes...")).changed() {
-                                            settings.notes = if notes.is_empty() { None } else { Some(notes) };
-                                            *changed = true;
-                                        }
-                                        ui.end_row();
-
-                                        // Hotkey Binding
-                                        ui.label("Hotkey:");
-                                        ui.horizontal(|ui| {
-                                            if let Some(binding) = profile.character_hotkeys.get(character) {
-                                                ui.label(format!("[{}]", binding.display_name()));
-                                                if ui.small_button("Clear").clicked() {
-                                                    profile.character_hotkeys.remove(character);
-                                                    *changed = true;
-                                                }
-                                            } else {
-                                                let bind_text = if hotkey_state.is_capturing_for(character) {
-                                                    "Capturing..."
-                                                } else {
-                                                    "Bind Key"
-                                                };
-                                                if ui.button(bind_text).clicked() {
-                                                    hotkey_state.start_key_capture_for_character(
-                                                        character.clone(),
-                                                        profile.hotkey_backend,
-                                                    );
-                                                }
-                                            }
-                                        });
-                                        ui.end_row();
-
-                                        // Appearance Overrides
-                                        ui.label("Overrides:");
-                                        ui.vertical(|ui| {
-                                            // Active Border Overrides
-                                            ui.horizontal(|ui| {
-                                                 // Helper to manage optional overrides
-                                                let mut active_custom = settings.override_active_border_color.is_some() || settings.override_active_border_size.is_some();
-                                                let cached = state.cached_overrides.entry(character.clone()).or_default();
-
-                                                if ui.checkbox(&mut active_custom, "Active Border").changed() {
-                                                    if active_custom {
-                                                        // Enable: Restore from cache or use defaults
-                                                        if settings.override_active_border_color.is_none() {
-                                                            settings.override_active_border_color = cached.active_border_color.clone()
-                                                                .or_else(|| Some(profile.thumbnail_active_border_color.clone()));
-                                                        }
-                                                        if settings.override_active_border_size.is_none() {
-                                                             settings.override_active_border_size = cached.active_border_size.or(Some(profile.thumbnail_active_border_size));
-                                                        }
-                                                    } else {
-                                                        // Disable: Cache current values then clear
-                                                        cached.active_border_color = settings.override_active_border_color.clone();
-                                                        cached.active_border_size = settings.override_active_border_size;
-
-                                                        settings.override_active_border_color = None;
-                                                        settings.override_active_border_size = None;
-                                                    }
-                                                    *changed = true;
-                                                }
-
-                                                if active_custom {
-                                                    // Color Override
-                                                    let mut color_override = settings.override_active_border_color.is_some();
-                                                    if ui.checkbox(&mut color_override, "Color").changed() {
-                                                        if color_override {
-                                                             settings.override_active_border_color = cached.active_border_color.clone()
-                                                                .or_else(|| Some(profile.thumbnail_active_border_color.clone()));
-                                                        } else {
-                                                            cached.active_border_color = settings.override_active_border_color.clone();
-                                                            settings.override_active_border_color = None;
-                                                        }
-                                                        *changed = true;
-                                                    }
-                                                    if let Some(ref mut hex_color) = settings.override_active_border_color
-                                                        && let Ok(mut color) = crate::gui::utils::parse_hex_color(hex_color)
-                                                        && ui.color_edit_button_srgba(&mut color).changed()
-                                                    {
-                                                        *hex_color = crate::gui::utils::format_hex_color(color);
-                                                        // Update cache live so it's fresh if we toggle off immediately
-                                                        cached.active_border_color = Some(hex_color.clone());
-                                                        *changed = true;
-                                                    }
-
-                                                    // Size Override
-                                                    let mut size_override = settings.override_active_border_size.is_some();
-                                                    if ui.checkbox(&mut size_override, "Size").changed() {
-                                                        if size_override {
-                                                            settings.override_active_border_size = cached.active_border_size
-                                                                .or(Some(profile.thumbnail_active_border_size));
-                                                        } else {
-                                                            cached.active_border_size = settings.override_active_border_size;
-                                                            settings.override_active_border_size = None;
-                                                        }
-                                                        *changed = true;
-                                                    }
-                                                    if let Some(ref mut size) = settings.override_active_border_size
-                                                        && ui.add(egui::DragValue::new(size).range(1..=20)).changed()
-                                                    {
-                                                        cached.active_border_size = Some(*size);
-                                                        *changed = true;
-                                                    }
-                                                }
-                                            });
-
-                                            // Inactive Border Overrides
-                                            ui.horizontal(|ui| {
-                                                let mut inactive_custom = settings.override_inactive_border_color.is_some() || settings.override_inactive_border_size.is_some();
-                                                let cached = state.cached_overrides.entry(character.clone()).or_default();
-
-                                                if ui.checkbox(&mut inactive_custom, "Inactive Border").changed() {
-                                                    if inactive_custom {
-                                                        if settings.override_inactive_border_color.is_none() {
-                                                            settings.override_inactive_border_color = cached.inactive_border_color.clone()
-                                                                .or_else(|| Some(profile.thumbnail_inactive_border_color.clone()));
-                                                        }
-                                                        if settings.override_inactive_border_size.is_none() {
-                                                            settings.override_inactive_border_size = cached.inactive_border_size.or(Some(profile.thumbnail_inactive_border_size));
-                                                        }
-                                                    } else {
-                                                        cached.inactive_border_color = settings.override_inactive_border_color.clone();
-                                                        cached.inactive_border_size = settings.override_inactive_border_size;
-
-                                                        settings.override_inactive_border_color = None;
-                                                        settings.override_inactive_border_size = None;
-                                                    }
-                                                    *changed = true;
-                                                }
-
-                                                if inactive_custom {
-                                                     // Color Override
-                                                    let mut color_override = settings.override_inactive_border_color.is_some();
-                                                    if ui.checkbox(&mut color_override, "Color").changed() {
-                                                        if color_override {
-                                                             settings.override_inactive_border_color = cached.inactive_border_color.clone()
-                                                                .or_else(|| Some(profile.thumbnail_inactive_border_color.clone()));
-                                                        } else {
-                                                            cached.inactive_border_color = settings.override_inactive_border_color.clone();
-                                                            settings.override_inactive_border_color = None;
-                                                        }
-                                                        *changed = true;
-                                                    }
-
-                                                    if let Some(ref mut hex_color) = settings.override_inactive_border_color
-                                                        && let Ok(mut color) = crate::gui::utils::parse_hex_color(hex_color)
-                                                        && ui.color_edit_button_srgba(&mut color).changed()
-                                                    {
-                                                        *hex_color = crate::gui::utils::format_hex_color(color);
-                                                        cached.inactive_border_color = Some(hex_color.clone());
-                                                        *changed = true;
-                                                    }
-
-                                                    // Size Override
-                                                    let mut size_override = settings.override_inactive_border_size.is_some();
-                                                    if ui.checkbox(&mut size_override, "Size").changed() {
-                                                        if size_override {
-                                                            settings.override_inactive_border_size = cached.inactive_border_size
-                                                                .or(Some(profile.thumbnail_inactive_border_size));
-                                                        } else {
-                                                            cached.inactive_border_size = settings.override_inactive_border_size;
-                                                            settings.override_inactive_border_size = None;
-                                                        }
-                                                        *changed = true;
-                                                    }
-                                                    if let Some(ref mut size) = settings.override_inactive_border_size
-                                                        && ui.add(egui::DragValue::new(size).range(1..=20)).changed()
-                                                    {
-                                                        cached.inactive_border_size = Some(*size);
-                                                        *changed = true;
-                                                    }
-                                                }
-                                            });
-
-                                            // Text Color
-                                            ui.horizontal(|ui| {
-                                                let mut text_color_enabled = settings.override_text_color.is_some();
-                                                let cached = state.cached_overrides.entry(character.clone()).or_default();
-
-                                                if ui.checkbox(&mut text_color_enabled, "Text Color").changed() {
-                                                    if text_color_enabled {
-                                                        settings.override_text_color = cached.text_color.clone()
-                                                            .or_else(|| Some(profile.thumbnail_text_color.clone()));
-                                                    } else {
-                                                        cached.text_color = settings.override_text_color.clone();
-                                                        settings.override_text_color = None;
-                                                    }
-                                                    *changed = true;
-                                                }
-
-                                                if let Some(ref mut hex_color) = settings.override_text_color
-                                                    && let Ok(mut color) = crate::gui::utils::parse_hex_color(hex_color)
-                                                    && ui.color_edit_button_srgba(&mut color).changed()
-                                                {
-                                                    *hex_color = crate::gui::utils::format_hex_color(color);
-                                                    cached.text_color = Some(hex_color.clone());
-                                                    *changed = true;
-                                                }
-                                            });
-                                        });
-                                        ui.end_row();
-                                    });
-                            });
-                        ui.add_space(ITEM_SPACING / 2.0);
-                    }
-
-                    // Add separator line between items
-                    if row_idx < profile.hotkey_cycle_group.len() - 1 {
-                        ui.separator();
-                    }
-
-                    // Detect drops onto this item for insertion preview
-                    if let (Some(pointer), Some(hovered_payload)) = (
-                        ui.input(|i| i.pointer.interact_pos()),
-                        response.dnd_hover_payload::<usize>(),
-                    ) {
-                        let rect = response.rect;
-                        let stroke = egui::Stroke::new(2.0, ui.visuals().selection.stroke.color);
-
-                        let insert_row_idx = if *hovered_payload == row_idx {
-                            // Dragged onto ourselves - show line at current position
-                            ui.painter().hline(rect.x_range(), rect.center().y, stroke);
-                            row_idx
-                        } else if pointer.y < rect.center().y {
-                            // Above this item
-                            ui.painter().hline(rect.x_range(), rect.top(), stroke);
-                            row_idx
-                        } else {
-                            // Below this item
-                            ui.painter().hline(rect.x_range(), rect.bottom(), stroke);
-                            row_idx + 1
-                        };
-
-                        if let Some(dragged_payload) = response.dnd_release_payload::<usize>() {
-                            // Item was dropped here
-                            from_idx = Some(*dragged_payload);
-                            to_idx = Some(insert_row_idx);
-                            *changed = true;
-                        }
-                    }
-
-                    // Delete button on right-click (keep context menu as alternative)
-                    response.context_menu(|ui| {
-                        if ui.button("🗑 Delete").clicked() {
-                            to_delete = Some(row_idx);
-                            *changed = true;
-                            ui.close();
-                        }
-                    });
-                }
-            });
-
-            // Handle drop onto empty area (append to end)
-            if let Some(dragged_payload) = dropped_payload {
-                from_idx = Some(*dragged_payload);
-                to_idx = Some(profile.hotkey_cycle_group.len());
-                *changed = true;
-            }
-
-            // Perform deletion
-            if let Some(idx) = to_delete {
-                profile.hotkey_cycle_group.remove(idx);
-            }
-
-            // Perform reordering
-            if let (Some(from), Some(mut to)) = (from_idx, to_idx) {
-                // Adjust target index if moving within same list
-                if from < to {
-                    to -= 1;
-                }
-
-                if from != to {
-                    let item = profile.hotkey_cycle_group.remove(from);
-                    let insert_idx = to.min(profile.hotkey_cycle_group.len());
-                    profile.hotkey_cycle_group.insert(insert_idx, item);
-                }
-            }
-        }
-    }
-
-    ui.add_space(ITEM_SPACING / 2.0);
-
-    ui.label(
-        egui::RichText::new(format!(
-            "Current cycle order: {} character(s)",
-            profile.hotkey_cycle_group.len()
-        ))
-        .small()
-        .weak(),
-    );
-
-    // Call shared modal rendering logic if dialog is active
-    if hotkey_state.is_dialog_open() {
-        *changed |= crate::gui::components::hotkey_settings::render_key_capture_modal(
-            ui,
-            profile,
-            hotkey_state,
-        );
     }
 }
