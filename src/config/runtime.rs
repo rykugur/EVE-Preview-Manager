@@ -35,10 +35,11 @@ pub struct DisplayConfig {
 
 /// Daemon runtime configuration - holds selected profile settings
 /// Built from the JSON config at runtime, not serialized directly
-#[derive(Debug)]
 pub struct DaemonConfig {
     pub profile: crate::config::profile::Profile,
     pub character_thumbnails: HashMap<String, CharacterSettings>,
+    // Map of HotkeyBinding -> Profile Name
+    pub profile_hotkeys: HashMap<crate::config::HotkeyBinding, String>,
 }
 
 impl DaemonConfig {
@@ -144,9 +145,18 @@ impl DaemonConfig {
 
         info!(profile = %profile.profile_name, "Using profile for daemon settings");
 
+        // aggregated map of hotkeys -> profile names
+        let mut profile_hotkeys = HashMap::new();
+        for p in &config.profiles {
+            if let Some(binding) = &p.hotkey_profile_switch {
+                profile_hotkeys.insert(binding.clone(), p.profile_name.clone());
+            }
+        }
+
         DaemonConfig {
             profile: profile.clone(),
             character_thumbnails: profile.character_thumbnails.clone(),
+            profile_hotkeys,
         }
     }
 
@@ -365,8 +375,10 @@ mod tests {
                 hotkey_backend: crate::config::HotkeyBackendType::X11,
                 thumbnail_enabled: true,
                 character_thumbnails: HashMap::new(),
+                hotkey_profile_switch: None,
             },
             character_thumbnails: HashMap::new(),
+            profile_hotkeys: HashMap::new(),
         }
     }
 

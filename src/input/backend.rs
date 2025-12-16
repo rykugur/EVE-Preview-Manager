@@ -42,6 +42,7 @@ pub trait HotkeyBackend: Sized {
         forward_key: Option<HotkeyBinding>,
         backward_key: Option<HotkeyBinding>,
         character_hotkeys: Vec<HotkeyBinding>,
+        profile_hotkeys: Vec<HotkeyBinding>,
         device_id: Option<String>,
         require_eve_focus: bool,
     ) -> Result<Vec<JoinHandle<()>>>;

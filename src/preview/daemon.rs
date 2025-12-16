@@ -134,6 +134,8 @@ fn setup_hotkeys(daemon_config: &DaemonConfig) -> HotkeyResources {
         })
         .collect();
 
+    let profile_hotkeys: Vec<_> = daemon_config.profile_hotkeys.keys().cloned().collect();
+
     // Group characters by hotkey binding to support cycling through multiple characters on the same key
     // This allows users to bind 'F1' to Cycle [Char1, Char2] effectively
     let mut hotkey_groups: HashMap<crate::config::HotkeyBinding, Vec<String>> = HashMap::new();
@@ -166,8 +168,9 @@ fn setup_hotkeys(daemon_config: &DaemonConfig) -> HotkeyResources {
     let has_cycle_keys = daemon_config.profile.hotkey_cycle_forward.is_some()
         && daemon_config.profile.hotkey_cycle_backward.is_some();
     let has_character_hotkeys = !character_hotkeys.is_empty();
+    let has_profile_hotkeys = !profile_hotkeys.is_empty();
 
-    let hotkey_handle = if has_cycle_keys || has_character_hotkeys {
+    let hotkey_handle = if has_cycle_keys || has_character_hotkeys || has_profile_hotkeys {
         // Select backend based on configuration
         use crate::config::HotkeyBackendType;
         use crate::input::backend::HotkeyBackend;
@@ -180,6 +183,7 @@ fn setup_hotkeys(daemon_config: &DaemonConfig) -> HotkeyResources {
                     daemon_config.profile.hotkey_cycle_forward.clone(),
                     daemon_config.profile.hotkey_cycle_backward.clone(),
                     character_hotkeys.clone(),
+                    profile_hotkeys.clone(),
                     daemon_config.profile.hotkey_input_device.clone(),
                     daemon_config.profile.hotkey_require_eve_focus,
                 ) {
@@ -188,7 +192,10 @@ fn setup_hotkeys(daemon_config: &DaemonConfig) -> HotkeyResources {
                             enabled = true,
                             backend = "x11",
                             has_cycle_keys = has_cycle_keys,
+                            backend = "x11",
+                            has_cycle_keys = has_cycle_keys,
                             has_character_hotkeys = has_character_hotkeys,
+                            has_profile_hotkeys = has_profile_hotkeys,
                             "Hotkey support enabled"
                         );
                         Some(handle)
@@ -210,6 +217,7 @@ fn setup_hotkeys(daemon_config: &DaemonConfig) -> HotkeyResources {
                         daemon_config.profile.hotkey_cycle_forward.clone(),
                         daemon_config.profile.hotkey_cycle_backward.clone(),
                         character_hotkeys.clone(),
+                        profile_hotkeys.clone(),
                         daemon_config.profile.hotkey_input_device.clone(),
                         daemon_config.profile.hotkey_require_eve_focus,
                     ) {
@@ -218,7 +226,10 @@ fn setup_hotkeys(daemon_config: &DaemonConfig) -> HotkeyResources {
                                 enabled = true,
                                 backend = "evdev",
                                 has_cycle_keys = has_cycle_keys,
+                                backend = "evdev",
+                                has_cycle_keys = has_cycle_keys,
                                 has_character_hotkeys = has_character_hotkeys,
+                                has_profile_hotkeys = has_profile_hotkeys,
                                 "Hotkey support enabled"
                             );
                             Some(handle)
@@ -358,6 +369,34 @@ async fn run_event_loop(
                                 );
                                 None
                             }
+                        }
+                        CycleCommand::ProfileHotkey(ref binding) => {
+                             info!(binding = %binding.display_name(), "Received profile switch hotkey");
+
+                             if let Some(profile_name) = resources.config.profile_hotkeys.get(binding) {
+                                 info!(target_profile = %profile_name, "Switching profile via hotkey");
+
+                                 // 1. Load fresh config from disk to ensure we have latest state
+                                 match crate::config::profile::Config::load() {
+                                     Ok(mut disk_config) => {
+                                         // 2. Update selected profile
+                                         disk_config.global.selected_profile = profile_name.clone();
+
+                                         // 3. Save directly
+                                         if let Err(e) = disk_config.save_with_strategy(crate::config::profile::SaveStrategy::Overwrite) {
+                                             error!(error = %e, "Failed to save config for profile switch");
+                                         } else {
+                                             info!("Profile switched successfully - GUI should detect change and restart daemon");
+                                         }
+                                     }
+                                     Err(e) => {
+                                         error!(error = %e, "Failed to load config for profile switch");
+                                     }
+                                 }
+                             } else {
+                                 warn!(binding = %binding.display_name(), "Profile hotkey not found in map");
+                             }
+                             None
                         }
                     };
 

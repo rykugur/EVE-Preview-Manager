@@ -142,6 +142,10 @@ pub struct Profile {
     #[serde(default)]
     pub hotkey_require_eve_focus: bool,
 
+    /// Hotkey to switch to this profile (global)
+    #[serde(default)]
+    pub hotkey_profile_switch: Option<crate::config::HotkeyBinding>,
+
     /// Character cycle order (list of character names)
     #[serde(default)]
     pub hotkey_cycle_group: Vec<String>,
@@ -259,6 +263,7 @@ fn default_profiles() -> Vec<Profile> {
         hotkey_cycle_backward: None, // User must configure
         hotkey_logged_out_cycle: false, // Default: off
         hotkey_require_eve_focus: crate::constants::defaults::behavior::HOTKEY_REQUIRE_EVE_FOCUS,
+        hotkey_profile_switch: None,
         hotkey_cycle_group: Vec::new(),
         character_hotkeys: HashMap::new(),
         character_thumbnails: HashMap::new(),

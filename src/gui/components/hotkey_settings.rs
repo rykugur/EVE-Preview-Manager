@@ -1,5 +1,6 @@
 //! Hotkey settings component for profile configuration
 
+use crate::config::HotkeyBackendType;
 use crate::config::profile::Profile;
 use crate::constants::gui::*;
 use crate::gui::key_capture::{self, CaptureResult, CaptureState};
@@ -10,6 +11,7 @@ use std::sync::mpsc::Receiver;
 enum CaptureTarget {
     Forward,
     Backward,
+    Profile,           // Hotkey to switch to this profile
     Character(String), // Character name for per-character hotkey
 }
 
@@ -24,6 +26,7 @@ pub struct HotkeySettingsState {
     capture_target: Option<CaptureTarget>,
     capture_state_rx: Option<Receiver<CaptureState>>,
     capture_result_rx: Option<Receiver<CaptureResult>>,
+    cancel_capture_tx: Option<std::sync::mpsc::Sender<()>>,
     current_capture_state: Option<CaptureState>,
     capture_result: Option<CaptureResult>,
     capture_error: Option<String>,
@@ -47,6 +50,7 @@ impl HotkeySettingsState {
             capture_target: None,
             capture_state_rx: None,
             capture_result_rx: None,
+            cancel_capture_tx: None,
             current_capture_state: None,
             capture_result: None,
             capture_error: None,
@@ -60,12 +64,16 @@ impl HotkeySettingsState {
         target: CaptureTarget,
         backend: crate::config::HotkeyBackendType,
     ) {
+        // Ensure any previous capture is cancelled first
+        self.cancel_capture();
+
         match key_capture::start_capture(backend) {
-            Ok((state_rx, result_rx)) => {
+            Ok((state_rx, result_rx, cancel_tx)) => {
                 self.show_key_capture_dialog = true;
                 self.capture_target = Some(target);
                 self.capture_state_rx = Some(state_rx);
                 self.capture_result_rx = Some(result_rx);
+                self.cancel_capture_tx = Some(cancel_tx);
                 self.current_capture_state = Some(CaptureState::new());
                 self.capture_result = None;
                 self.capture_error = None;
@@ -78,6 +86,9 @@ impl HotkeySettingsState {
 
     /// Cancel ongoing key capture
     fn cancel_capture(&mut self) {
+        if let Some(tx) = self.cancel_capture_tx.take() {
+            let _ = tx.send(());
+        }
         self.show_key_capture_dialog = false;
         self.capture_target = None;
         self.capture_state_rx = None;
@@ -129,194 +140,219 @@ pub fn ui(ui: &mut egui::Ui, profile: &mut Profile, state: &mut HotkeySettingsSt
         ui.add_space(ITEM_SPACING);
     }
 
-    ui.group(|ui| {
-        ui.label(egui::RichText::new("Hotkey Settings").strong());
-        ui.add_space(ITEM_SPACING);
+    ui.columns(2, |columns| {
+        // --- Column 1: General & Cycle Settings ---
+        columns[0].group(|ui| {
+            ui.set_min_width(ui.available_width());
+            ui.label(egui::RichText::new("General Settings").strong());
+            ui.add_space(ITEM_SPACING);
 
-        // Backend selector
-        ui.label("Hotkey Backend:");
-        ui.add_space(ITEM_SPACING / 2.0);
-
-        use crate::config::HotkeyBackendType;
-        let backend_display = match profile.hotkey_backend {
-            HotkeyBackendType::X11 => "X11 (Recommended)",
-            HotkeyBackendType::Evdev => "evdev (Advanced - Requires Permissions)",
-        };
-
-        egui::ComboBox::from_id_salt("hotkey_backend_selector")
-            .selected_text(backend_display)
-            .show_ui(ui, |ui| {
-                if ui.selectable_value(&mut profile.hotkey_backend, HotkeyBackendType::X11, "X11 (Recommended)").clicked() {
-                    changed = true;
-                }
-                if ui.selectable_value(&mut profile.hotkey_backend, HotkeyBackendType::Evdev, "evdev (Advanced - Requires Permissions)").clicked() {
-                    changed = true;
-                }
-            });
-
-        ui.add_space(ITEM_SPACING / 4.0);
-
-        // Show backend capabilities and warnings
-        match profile.hotkey_backend {
-            HotkeyBackendType::X11 => {
-                // No extra info needed for X11
-            }
-            HotkeyBackendType::Evdev => {
-                ui.label(egui::RichText::new("⚠ Security Warning: evdev backend requires 'input' group membership, which allows ALL applications to read keyboard input.").small());
-            }
-        }
-
-        ui.add_space(ITEM_SPACING);
-        ui.separator();
-        ui.add_space(ITEM_SPACING);
-
-        // Input device selector (only shown for evdev backend)
-        if profile.hotkey_backend == HotkeyBackendType::Evdev {
-            ui.label("Input device to monitor:");
+            // Backend selector
+            ui.label("Hotkey Backend:");
             ui.add_space(ITEM_SPACING / 2.0);
 
-            let selected_display = match profile.hotkey_input_device.as_deref() {
-            None => "---".to_string(),
-            Some("auto") => "Auto-Detect (Recommended)".to_string(),
-            Some("all") => "All Devices".to_string(),
-            Some(device_id) => {
-                // This shouldn't happen with new system, but handle legacy configs
-                state.available_devices.iter()
-                    .find(|(id, _)| id == device_id)
-                    .map(|(_, name)| name.clone())
-                    .unwrap_or_else(|| "Auto-Detect (Recommended)".to_string())
-            }
-        };
+            use crate::config::HotkeyBackendType;
+            let backend_display = match profile.hotkey_backend {
+                HotkeyBackendType::X11 => "X11 (Recommended)",
+                HotkeyBackendType::Evdev => "evdev (Advanced - Requires Permissions)",
+            };
 
-        egui::ComboBox::from_id_salt("hotkey_device_selector")
-            .selected_text(&selected_display)
-            .show_ui(ui, |ui| {
-                if ui.selectable_value(&mut profile.hotkey_input_device, None, "---").clicked() {
-                    changed = true;
-                }
-
-                if ui.selectable_value(&mut profile.hotkey_input_device, Some("auto".to_string()), "Auto-Detect (Recommended)").clicked() {
-                    changed = true;
-                }
-
-                if ui.selectable_value(&mut profile.hotkey_input_device, Some("all".to_string()), "All Devices").clicked() {
-                    changed = true;
-                }
-            });
-
-            if let Some(ref error) = state.device_load_error {
-                ui.add_space(ITEM_SPACING / 4.0);
-                ui.label(egui::RichText::new(format!("⚠ {}", error)).small().color(egui::Color32::from_rgb(200, 100, 0)));
-            }
-
-            // Show helper text for auto-detect mode
-            if profile.hotkey_input_device.as_deref() == Some("auto") {
-                ui.add_space(ITEM_SPACING / 4.0);
-                ui.label(egui::RichText::new("Devices will be automatically detected when you bind keys")
-                    .small()
-                    .weak());
-            }
-
-            // Show helper text for all devices mode
-            if profile.hotkey_input_device.as_deref() == Some("all") {
-                ui.add_space(ITEM_SPACING / 4.0);
-                ui.label(egui::RichText::new("Hotkeys will work from any connected input device")
-                    .small()
-                    .weak());
-            }
-
-            // Show message when device not selected
-            if profile.hotkey_input_device.is_none() {
-                ui.add_space(ITEM_SPACING / 4.0);
-                ui.label(egui::RichText::new("Select an input device above to configure hotkeys")
-                    .small()
-                    .weak());
-            }
-
-            ui.add_space(ITEM_SPACING);
-            ui.separator();
-            ui.add_space(ITEM_SPACING);
-        } // End of evdev backend-specific device selector
-
-        // For X11 backend, device selection is not applicable
-        let device_selected = match profile.hotkey_backend {
-            HotkeyBackendType::X11 => true, // Always enabled for X11
-            HotkeyBackendType::Evdev => profile.hotkey_input_device.is_some(),
-        };
-
-        ui.add_enabled_ui(device_selected, |ui| {
-            // Hotkey Bindings
-            ui.label("Configure keys for cycling through characters:");
-            ui.add_space(ITEM_SPACING / 2.0);
-
-            // Forward key binding
-            ui.horizontal(|ui| {
-                ui.label("Forward cycle:");
-                let binding_text = profile.hotkey_cycle_forward.as_ref()
-                    .map(|b| b.display_name())
-                    .unwrap_or_else(|| "Not set".to_string());
-                let color = if profile.hotkey_cycle_forward.is_none() {
-                    egui::Color32::from_rgb(200, 100, 100)
-                } else {
-                    ui.style().visuals.text_color()
-                };
-                ui.label(egui::RichText::new(binding_text).strong().color(color));
-                if ui.button("⌨ Bind").clicked() {
-                    state.start_key_capture(CaptureTarget::Forward, profile.hotkey_backend);
-                }
-            });
-
-            ui.add_space(ITEM_SPACING / 2.0);
-
-            // Backward key binding
-            ui.horizontal(|ui| {
-                ui.label("Backward cycle:");
-                let binding_text = profile.hotkey_cycle_backward.as_ref()
-                    .map(|b| b.display_name())
-                    .unwrap_or_else(|| "Not set".to_string());
-                let color = if profile.hotkey_cycle_backward.is_none() {
-                    egui::Color32::from_rgb(200, 100, 100)
-                } else {
-                    ui.style().visuals.text_color()
-                };
-                ui.label(egui::RichText::new(binding_text).strong().color(color));
-                if ui.button("⌨ Bind").clicked() {
-                    state.start_key_capture(CaptureTarget::Backward, profile.hotkey_backend);
-                }
-            });
-
-            ui.add_space(ITEM_SPACING);
-            ui.separator();
-            ui.add_space(ITEM_SPACING);
-
-            // Require EVE focus checkbox
-            if ui.checkbox(&mut profile.hotkey_require_eve_focus,
-                "Require EVE window focus").changed() {
-                changed = true;
-            }
-
-            ui.label(egui::RichText::new(
-                "When enabled, cycle hotkeys only work when an EVE window is focused")
-                .small()
-                .weak());
-
-            ui.add_space(ITEM_SPACING);
-
-            // Logged-out cycling checkbox
-            if ui.checkbox(
-                &mut profile.hotkey_logged_out_cycle,
-                "Include logged-out characters in cycle"
-            ).changed() {
-                changed = true;
-            }
+            egui::ComboBox::from_id_salt("hotkey_backend_selector")
+                .selected_text(backend_display)
+                .width(ui.available_width())
+                .show_ui(ui, |ui| {
+                    if ui.selectable_value(&mut profile.hotkey_backend, HotkeyBackendType::X11, "X11 (Recommended)").clicked() {
+                        changed = true;
+                    }
+                    if ui.selectable_value(&mut profile.hotkey_backend, HotkeyBackendType::Evdev, "evdev (Advanced - Requires Permissions)").clicked() {
+                        changed = true;
+                    }
+                });
 
             ui.add_space(ITEM_SPACING / 4.0);
 
-            ui.label(egui::RichText::new(
-                "When enabled, characters that log out will remain in the cycle using their last position")
-                .small()
-                .weak());
+            // Show backend capabilities and warnings
+            match profile.hotkey_backend {
+                HotkeyBackendType::X11 => {
+                    // No extra info needed for X11
+                }
+                HotkeyBackendType::Evdev => {
+                    ui.label(egui::RichText::new("⚠ Security Warning: evdev backend requires 'input' group membership.").small());
+                }
+            }
+
+            ui.add_space(ITEM_SPACING);
+            ui.separator();
+            ui.add_space(ITEM_SPACING);
+
+            // Input device selector (only shown for evdev backend)
+            if profile.hotkey_backend == HotkeyBackendType::Evdev {
+                ui.label("Input device to monitor:");
+                ui.add_space(ITEM_SPACING / 2.0);
+
+                let selected_display = match profile.hotkey_input_device.as_deref() {
+                    None => "---".to_string(),
+                    Some("auto") => "Auto-Detect (Recommended)".to_string(),
+                    Some("all") => "All Devices".to_string(),
+                    Some(device_id) => {
+                        state.available_devices.iter()
+                            .find(|(id, _)| id == device_id)
+                            .map(|(_, name)| name.clone())
+                            .unwrap_or_else(|| "Auto-Detect (Recommended)".to_string())
+                    }
+                };
+
+                egui::ComboBox::from_id_salt("hotkey_device_selector")
+                    .selected_text(&selected_display)
+                    .width(ui.available_width())
+                    .show_ui(ui, |ui| {
+                        if ui.selectable_value(&mut profile.hotkey_input_device, None, "---").clicked() {
+                            changed = true;
+                        }
+                        if ui.selectable_value(&mut profile.hotkey_input_device, Some("auto".to_string()), "Auto-Detect (Recommended)").clicked() {
+                            changed = true;
+                        }
+                        if ui.selectable_value(&mut profile.hotkey_input_device, Some("all".to_string()), "All Devices").clicked() {
+                            changed = true;
+                        }
+                    });
+
+                if let Some(ref error) = state.device_load_error {
+                    ui.add_space(ITEM_SPACING / 4.0);
+                    ui.label(egui::RichText::new(format!("⚠ {}", error)).small().color(egui::Color32::from_rgb(200, 100, 0)));
+                }
+
+                // Show helper text for auto-detect mode
+                if profile.hotkey_input_device.as_deref() == Some("auto") {
+                    ui.add_space(ITEM_SPACING / 4.0);
+                    ui.label(egui::RichText::new("Devices will be automatically detected when you bind keys").small().weak());
+                }
+
+                // Show helper text for all devices mode
+                if profile.hotkey_input_device.as_deref() == Some("all") {
+                    ui.add_space(ITEM_SPACING / 4.0);
+                    ui.label(egui::RichText::new("Hotkeys will work from any connected input device").small().weak());
+                }
+
+                 ui.add_space(ITEM_SPACING);
+                 ui.separator();
+                 ui.add_space(ITEM_SPACING);
+            }
+
+            // For X11 backend, device selection is not applicable
+            let device_selected = match profile.hotkey_backend {
+                HotkeyBackendType::X11 => true, // Always enabled for X11
+                HotkeyBackendType::Evdev => profile.hotkey_input_device.is_some(),
+            };
+
+            ui.add_enabled_ui(device_selected, |ui| {
+                ui.label("Cycle Bindings:");
+                ui.add_space(ITEM_SPACING / 2.0);
+
+                // Forward key binding
+                ui.horizontal(|ui| {
+                    ui.label("Forward:");
+                    let binding_text = profile.hotkey_cycle_forward.as_ref()
+                        .map(|b| b.display_name())
+                        .unwrap_or_else(|| "Not set".to_string());
+                    let color = if profile.hotkey_cycle_forward.is_none() {
+                        egui::Color32::from_rgb(200, 100, 100)
+                    } else {
+                        ui.style().visuals.text_color()
+                    };
+                    ui.label(egui::RichText::new(binding_text).strong().color(color));
+                    if ui.button("⌨ Bind").clicked() {
+                        state.start_key_capture(CaptureTarget::Forward, profile.hotkey_backend);
+                    }
+                });
+
+                ui.add_space(ITEM_SPACING / 2.0);
+
+                // Backward key binding
+                ui.horizontal(|ui| {
+                    ui.label("Backward:");
+                    let binding_text = profile.hotkey_cycle_backward.as_ref()
+                        .map(|b| b.display_name())
+                        .unwrap_or_else(|| "Not set".to_string());
+                    let color = if profile.hotkey_cycle_backward.is_none() {
+                        egui::Color32::from_rgb(200, 100, 100)
+                    } else {
+                        ui.style().visuals.text_color()
+                    };
+                    ui.label(egui::RichText::new(binding_text).strong().color(color));
+                    if ui.button("⌨ Bind").clicked() {
+                        state.start_key_capture(CaptureTarget::Backward, profile.hotkey_backend);
+                    }
+                });
+
+                ui.add_space(ITEM_SPACING);
+                ui.separator();
+                ui.add_space(ITEM_SPACING);
+
+                // Require EVE focus checkbox
+                if ui.checkbox(&mut profile.hotkey_require_eve_focus, "Require EVE window focus").changed() {
+                    changed = true;
+                }
+                ui.label(egui::RichText::new("Cycle hotkeys only work when an EVE window is focused").small().weak());
+
+                ui.add_space(ITEM_SPACING);
+
+                // Logged-out cycling checkbox
+                if ui.checkbox(&mut profile.hotkey_logged_out_cycle, "Include logged-out characters").changed() {
+                    changed = true;
+                }
+                ui.label(egui::RichText::new("Characters that log out will remain in the cycle").small().weak());
+            });
         });
+
+        // --- Column 2: Profile Settings ---
+        columns[1].group(|ui| {
+            ui.set_min_width(ui.available_width());
+            ui.label(egui::RichText::new("Profile Activation").strong());
+            ui.add_space(ITEM_SPACING);
+
+            // For X11 backend, device selection is not applicable (duplicated logic for right column enabled state)
+            let device_selected = match profile.hotkey_backend {
+                HotkeyBackendType::X11 => true,
+                HotkeyBackendType::Evdev => profile.hotkey_input_device.is_some(),
+            };
+
+            ui.add_enabled_ui(device_selected, |ui| {
+                 ui.label("Load Profile Hotkey:");
+                 ui.add_space(ITEM_SPACING / 2.0);
+
+                 ui.horizontal(|ui| {
+                    let binding_text = profile.hotkey_profile_switch.as_ref()
+                        .map(|b| b.display_name())
+                        .unwrap_or_else(|| "Not set".to_string());
+
+                    let color = if profile.hotkey_profile_switch.is_none() {
+                        ui.style().visuals.weak_text_color() // Less critical than cycle keys
+                    } else {
+                        ui.style().visuals.text_color()
+                    };
+
+                    ui.label(egui::RichText::new(binding_text).strong().color(color));
+
+                    if ui.button("⌨ Bind").clicked() {
+                        state.start_key_capture(CaptureTarget::Profile, profile.hotkey_backend);
+                    }
+
+                     if profile.hotkey_profile_switch.is_some() && ui.small_button("Clear").clicked() {
+                        profile.hotkey_profile_switch = None;
+                        changed = true;
+                    }
+                 });
+
+                 ui.add_space(ITEM_SPACING);
+                 ui.label(egui::RichText::new("Pressing this hotkey will immediately switch to this profile.").weak().small());
+
+                 if profile.hotkey_backend == HotkeyBackendType::Evdev {
+                      ui.add_space(ITEM_SPACING);
+                      ui.label(egui::RichText::new("Note: Global profile hotkeys require the Evdev backend to work reliably when the EVE client is not focused.").weak().small().italics());
+                 }
+            });
+         });
     });
 
     // Key Capture Dialog
@@ -379,6 +415,7 @@ pub fn render_key_capture_modal(
             let target_name = match state.capture_target {
                 Some(CaptureTarget::Forward) => "Forward Cycle".to_string(),
                 Some(CaptureTarget::Backward) => "Backward Cycle".to_string(),
+                Some(CaptureTarget::Profile) => "Switch to Profile".to_string(),
                 Some(CaptureTarget::Character(ref name)) => format!("Character: {}", name),
                 None => "Unknown".to_string(),
             };
@@ -491,6 +528,10 @@ pub fn render_key_capture_modal(
                                 }
                                 Some(CaptureTarget::Backward) => {
                                     profile.hotkey_cycle_backward = Some(binding_clone);
+                                    changed = true;
+                                }
+                                Some(CaptureTarget::Profile) => {
+                                    profile.hotkey_profile_switch = Some(binding_clone);
                                     changed = true;
                                 }
                                 Some(CaptureTarget::Character(ref char_name)) => {

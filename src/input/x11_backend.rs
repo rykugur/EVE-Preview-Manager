@@ -33,14 +33,16 @@ impl HotkeyBackend for X11Backend {
         forward_key: Option<HotkeyBinding>,
         backward_key: Option<HotkeyBinding>,
         character_hotkeys: Vec<HotkeyBinding>,
+        profile_hotkeys: Vec<HotkeyBinding>,
         _device_id: Option<String>, // Not used by X11 backend
         require_eve_focus: bool,
     ) -> Result<Vec<JoinHandle<()>>> {
         // Check if we have any hotkeys to register
         let has_cycle = forward_key.is_some() && backward_key.is_some();
         let has_character = !character_hotkeys.is_empty();
+        let has_profile = !profile_hotkeys.is_empty();
 
-        if !has_cycle && !has_character {
+        if !has_cycle && !has_character && !has_profile {
             info!("No hotkeys configured - X11 listener will not be started");
             return Ok(Vec::new());
         }
@@ -57,6 +59,7 @@ impl HotkeyBackend for X11Backend {
                 forward_key,
                 backward_key,
                 character_hotkeys,
+                profile_hotkeys,
                 require_eve_focus,
             ) {
                 error!(error = %e, "X11 hotkey listener error");
@@ -92,6 +95,7 @@ fn run_x11_listener(
     forward_key: Option<HotkeyBinding>,
     backward_key: Option<HotkeyBinding>,
     character_hotkeys: Vec<HotkeyBinding>,
+    profile_hotkeys: Vec<HotkeyBinding>,
     require_eve_focus: bool,
 ) -> Result<()> {
     // Connect to X11
@@ -154,6 +158,26 @@ fn run_x11_listener(
             );
         } else {
             warn!(binding = %char_hotkey.display_name(), "Failed to map character hotkey to X11");
+        }
+    }
+
+    // Register profile hotkeys
+    let profile_hotkeys = Arc::new(profile_hotkeys);
+    for profile_hotkey in profile_hotkeys.iter() {
+        if let Some((keycode, modmask)) = evdev_to_x11_key(profile_hotkey) {
+            register_hotkey(&conn, root, keycode, modmask)?;
+            hotkey_map.insert(
+                (keycode, modmask),
+                CycleCommand::ProfileHotkey(profile_hotkey.clone()),
+            );
+            info!(
+                binding = %profile_hotkey.display_name(),
+                x11_keycode = keycode,
+                modmask = ?modmask,
+                "Registered profile hotkey"
+            );
+        } else {
+            warn!(binding = %profile_hotkey.display_name(), "Failed to map profile hotkey to X11");
         }
     }
 

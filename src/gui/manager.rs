@@ -160,7 +160,13 @@ impl eframe::App for ManagerApp {
         };
         let state = &mut *state_guard;
 
+        let old_profile_idx = state.selected_profile_idx;
         state.poll_daemon();
+
+        #[cfg(target_os = "linux")]
+        if state.selected_profile_idx != old_profile_idx {
+            self.update_signal.notify_one();
+        }
 
         // Track window geometry changes and update config
         // Clone viewport info to avoid lifetime issues

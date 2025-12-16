@@ -311,8 +311,35 @@ impl SharedState {
             && let Ok(mtime) = metadata.modified()
             && self.last_config_mtime.is_none_or(|last| mtime > last)
         {
-            info!("Config file modified externally, reloading character list");
-            self.reload_character_list();
+            info!("Config file modified externally");
+            match Config::load() {
+                Ok(disk_config) => {
+                    // Check if profile changed
+                    if disk_config.global.selected_profile != self.config.global.selected_profile {
+                        info!(
+                            old = %self.config.global.selected_profile,
+                            new = %disk_config.global.selected_profile,
+                            "Profile changed externally, reloading configuration"
+                        );
+                        self.discard_changes();
+                        // discard_changes restarts the daemon automatically if needed via settings_changed flag or similar?
+                        // Actually discard_changes just reloads config. The daemon should eventually restart if we added logic for that,
+                        // but here we might need to trigger it explicitly if the GUI is responsible for the daemon lifecycle.
+                        // However, the daemon *itself* initiated this change, so it might be in a weird state.
+                        // Ideally, the daemon exits after changing the profile?
+                        // If the daemon exits, poll_daemon handles the exit.
+                        // But if it doesn't, we should restart it to ensure it loads the new profile settings.
+                        self.restart_daemon();
+                    } else {
+                        // Just characters changed?
+                        info!("Reloading character list from external change");
+                        self.reload_character_list();
+                    }
+                }
+                Err(e) => {
+                    error!(error = %e, "Failed to load modified config");
+                }
+            }
             self.last_config_mtime = Some(mtime);
         }
 

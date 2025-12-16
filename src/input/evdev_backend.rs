@@ -33,6 +33,7 @@ impl HotkeyBackend for EvdevBackend {
         forward_key: Option<HotkeyBinding>,
         backward_key: Option<HotkeyBinding>,
         character_hotkeys: Vec<HotkeyBinding>,
+        profile_hotkeys: Vec<HotkeyBinding>,
         selected_device_id: Option<String>,
         require_eve_focus: bool,
     ) -> Result<Vec<JoinHandle<()>>> {
@@ -41,6 +42,7 @@ impl HotkeyBackend for EvdevBackend {
             forward_key,
             backward_key,
             character_hotkeys,
+            profile_hotkeys,
             selected_device_id,
             require_eve_focus,
         )
@@ -74,6 +76,7 @@ fn spawn_listener_impl(
     forward_key: Option<HotkeyBinding>,
     backward_key: Option<HotkeyBinding>,
     character_hotkeys: Vec<HotkeyBinding>,
+    profile_hotkeys: Vec<HotkeyBinding>,
     selected_device_id: Option<String>,
     _require_eve_focus: bool, // Not currently implemented for evdev backend
 ) -> Result<Vec<thread::JoinHandle<()>>> {
@@ -111,6 +114,9 @@ fn spawn_listener_impl(
                 required_devices.extend(bwd.source_devices.iter().cloned());
             }
             for binding in &character_hotkeys {
+                required_devices.extend(binding.source_devices.iter().cloned());
+            }
+            for binding in &profile_hotkeys {
                 required_devices.extend(binding.source_devices.iter().cloned());
             }
 
@@ -198,6 +204,7 @@ fn spawn_listener_impl(
         let forward_key = forward_key.clone();
         let backward_key = backward_key.clone();
         let character_hotkeys = character_hotkeys.clone();
+        let profile_hotkeys = profile_hotkeys.clone();
         let all_device_paths = Arc::clone(&all_device_paths);
 
         let handle = thread::spawn(move || {
@@ -208,6 +215,7 @@ fn spawn_listener_impl(
                 forward_key,
                 backward_key,
                 character_hotkeys,
+                profile_hotkeys,
                 all_device_paths,
             ) {
                 error!(error = %e, "Hotkey listener error");
@@ -226,6 +234,7 @@ fn listen_for_hotkeys(
     forward_key: Option<HotkeyBinding>,
     backward_key: Option<HotkeyBinding>,
     character_hotkeys: Vec<HotkeyBinding>,
+    profile_hotkeys: Vec<HotkeyBinding>,
     all_device_paths: Arc<Vec<std::path::PathBuf>>,
 ) -> Result<()> {
     loop {
@@ -253,8 +262,9 @@ fn listen_for_hotkeys(
                         .as_ref()
                         .is_some_and(|bwd| bwd.key_code == key_code);
                 let is_character_key = character_hotkeys.iter().any(|hk| hk.key_code == key_code);
+                let is_profile_key = profile_hotkeys.iter().any(|hk| hk.key_code == key_code);
 
-                if is_cycle_key || is_character_key {
+                if is_cycle_key || is_character_key || is_profile_key {
                     potential_hotkey_presses.push(key_code);
                 }
             }
@@ -343,6 +353,28 @@ fn listen_for_hotkeys(
                         sender
                             .blocking_send(CycleCommand::CharacterHotkey(char_hotkey.clone()))
                             .context("Failed to send character hotkey command")?;
+                        break; // Only send one command per keypress
+                    }
+                }
+            }
+
+            if !handled {
+                // Check profile hotkeys
+                for profile_hotkey in &profile_hotkeys {
+                    if profile_hotkey.matches(
+                        key_code,
+                        ctrl_pressed,
+                        shift_pressed,
+                        alt_pressed,
+                        super_pressed,
+                    ) {
+                        info!(
+                            binding = %profile_hotkey.display_name(),
+                            "Profile hotkey pressed, sending command"
+                        );
+                        sender
+                            .blocking_send(CycleCommand::ProfileHotkey(profile_hotkey.clone()))
+                            .context("Failed to send profile hotkey command")?;
                         break; // Only send one command per keypress
                     }
                 }

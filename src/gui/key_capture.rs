@@ -100,7 +100,7 @@ impl Default for CaptureState {
 /// Returns a receiver that will receive updates about capture state and final result
 pub fn start_capture(
     backend: HotkeyBackendType,
-) -> Result<(Receiver<CaptureState>, Receiver<CaptureResult>)> {
+) -> Result<(Receiver<CaptureState>, Receiver<CaptureResult>, Sender<()>)> {
     // Check permissions first if using evdev
     if backend == HotkeyBackendType::Evdev && std::fs::read_dir(paths::DEV_INPUT).is_err() {
         return Err(anyhow::anyhow!(
@@ -113,11 +113,12 @@ pub fn start_capture(
 
     let (state_tx, state_rx) = mpsc::channel();
     let (result_tx, result_rx) = mpsc::channel();
+    let (cancel_tx, cancel_rx) = mpsc::channel();
 
     thread::spawn(move || {
         let result = match backend {
-            HotkeyBackendType::X11 => capture_key_x11(state_tx),
-            HotkeyBackendType::Evdev => capture_key_blocking(state_tx),
+            HotkeyBackendType::X11 => capture_key_x11(state_tx, cancel_rx),
+            HotkeyBackendType::Evdev => capture_key_blocking(state_tx, cancel_rx),
         };
 
         match result {
@@ -131,11 +132,14 @@ pub fn start_capture(
         }
     });
 
-    Ok((state_rx, result_rx))
+    Ok((state_rx, result_rx, cancel_tx))
 }
 
 /// Blocking key capture using X11 GrabKeyboard
-fn capture_key_x11(state_tx: Sender<CaptureState>) -> Result<CaptureResult> {
+fn capture_key_x11(
+    state_tx: Sender<CaptureState>,
+    cancel_rx: Receiver<()>,
+) -> Result<CaptureResult> {
     let (conn, screen_num) = x11rb::connect(None).context("Failed to connect to X11")?;
     let screen = &conn.setup().roots[screen_num];
     let root = screen.root;
@@ -201,6 +205,12 @@ fn capture_key_x11(state_tx: Sender<CaptureState>) -> Result<CaptureResult> {
     loop {
         if start.elapsed() > timeout {
             return Ok(CaptureResult::Timeout);
+        }
+
+        // Check for cancellation signal
+        if cancel_rx.try_recv().is_ok() {
+            info!("Key capture cancelled by signal");
+            return Ok(CaptureResult::Cancelled);
         }
 
         // Ensure requests are sent
@@ -297,7 +307,10 @@ fn capture_key_x11(state_tx: Sender<CaptureState>) -> Result<CaptureResult> {
 }
 
 /// Blocking key capture that sends state updates via channel
-fn capture_key_blocking(state_tx: Sender<CaptureState>) -> Result<CaptureResult> {
+fn capture_key_blocking(
+    state_tx: Sender<CaptureState>,
+    cancel_rx: Receiver<()>,
+) -> Result<CaptureResult> {
     // Find all input devices (keyboards and mice) with their paths
     let devices_with_paths = device_detection::find_all_input_devices_with_paths()
         .context("Failed to find input devices for key capture")?;
@@ -333,6 +346,12 @@ fn capture_key_blocking(state_tx: Sender<CaptureState>) -> Result<CaptureResult>
         if start.elapsed() > timeout {
             info!("Key capture timed out");
             return Ok(CaptureResult::Timeout);
+        }
+
+        // Check for cancellation signal
+        if cancel_rx.try_recv().is_ok() {
+            info!("Key capture cancelled by signal");
+            return Ok(CaptureResult::Cancelled);
         }
 
         // Poll all devices for events

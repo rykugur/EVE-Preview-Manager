@@ -15,6 +15,8 @@ pub enum CycleCommand {
     Backward,
     /// Triggered when a character-specific hotkey is pressed, carrying its binding configuration for context
     CharacterHotkey(HotkeyBinding),
+    /// Triggered when a profile switch hotkey is pressed
+    ProfileHotkey(HotkeyBinding),
 }
 
 /// Print helpful error message if evdev permissions are missing
