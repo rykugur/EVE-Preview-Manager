@@ -184,6 +184,9 @@ fn run_x11_listener(
             revents: 0,
         }];
 
+        // SAFETY: `poll_fds` is a valid pointer to a stack-allocated array of `pollfd`.
+        // The array length is 1, which matches the second argument.
+        // The timeout is 250ms, which is a safe integer value.
         let poll_result = unsafe { libc::poll(poll_fds.as_mut_ptr(), 1, 250) };
 
         if poll_result < 0 {
@@ -211,7 +214,8 @@ fn run_x11_listener(
                             let focused_window = focus_cookie.reply()?.focus;
                             let title =
                                 get_window_title_sync(&conn, focused_window).unwrap_or_default();
-                            let is_eve = title.starts_with(crate::constants::eve::WINDOW_TITLE_PREFIX)
+                            let is_eve = title
+                                .starts_with(crate::constants::eve::WINDOW_TITLE_PREFIX)
                                 || title == crate::constants::eve::LOGGED_OUT_TITLE;
 
                             if !is_eve {
@@ -253,7 +257,9 @@ fn run_x11_listener(
                     Event::MappingNotify(_) => {
                         // Keyboard mapping changed, we should re-register hotkeys
                         // For now, just log it - full implementation would rebuild the map
-                        warn!("Keyboard mapping changed - hotkeys may not work correctly until restart");
+                        warn!(
+                            "Keyboard mapping changed - hotkeys may not work correctly until restart"
+                        );
                     }
                     _ => {
                         // Ignore other events
@@ -276,7 +282,7 @@ fn run_x11_listener(
             // If EPM gained focus, ungrab hotkeys
             if is_epm_focused && hotkeys_grabbed {
                 info!("EPM gained focus, ungrabbing hotkeys to allow normal input");
-                for ((keycode, modmask), _) in &hotkey_map {
+                for (keycode, modmask) in hotkey_map.keys() {
                     ungrab_hotkey(&conn, root, *keycode, *modmask)?;
                 }
                 hotkeys_grabbed = false;
@@ -285,7 +291,7 @@ fn run_x11_listener(
             // If EPM lost focus, regrab hotkeys
             else if !is_epm_focused && !hotkeys_grabbed {
                 info!("EPM lost focus, re-grabbing hotkeys");
-                for ((keycode, modmask), _) in &hotkey_map {
+                for (keycode, modmask) in hotkey_map.keys() {
                     register_hotkey(&conn, root, *keycode, *modmask)?;
                 }
                 hotkeys_grabbed = true;
@@ -297,29 +303,22 @@ fn run_x11_listener(
 
 /// Helper to synchronously get window class
 fn get_window_class_sync(conn: &RustConnection, window: Window) -> Result<String> {
-    let cookie = conn.get_property(
-        false,
-        window,
-        AtomEnum::WM_CLASS,
-        AtomEnum::STRING,
-        0,
-        1024,
-    )?;
+    let cookie = conn.get_property(false, window, AtomEnum::WM_CLASS, AtomEnum::STRING, 0, 1024)?;
     let reply = cookie.reply()?;
-    
+
     if let Some(val) = reply.value8() {
         // WM_CLASS contains two null-terminated strings: <instance>\0<class>\0
         let bytes: Vec<u8> = val.collect();
         // Split by null byte
         let parts: Vec<&[u8]> = bytes.split(|&b| b == 0).collect();
-        
+
         // We usually care about the class (second string)
         if parts.len() >= 2 && !parts[1].is_empty() {
-             Ok(String::from_utf8_lossy(parts[1]).into_owned())
+            Ok(String::from_utf8_lossy(parts[1]).into_owned())
         } else if !parts.is_empty() {
-             Ok(String::from_utf8_lossy(parts[0]).into_owned())
+            Ok(String::from_utf8_lossy(parts[0]).into_owned())
         } else {
-             Ok(String::new())
+            Ok(String::new())
         }
     } else {
         Ok(String::new())
@@ -349,18 +348,10 @@ fn ungrab_hotkey(
     Ok(())
 }
 
-
 fn get_window_title_sync(conn: &RustConnection, window: Window) -> Result<String> {
-    let cookie = conn.get_property(
-        false,
-        window,
-        AtomEnum::WM_NAME,
-        AtomEnum::STRING,
-        0,
-        1024,
-    )?;
+    let cookie = conn.get_property(false, window, AtomEnum::WM_NAME, AtomEnum::STRING, 0, 1024)?;
     let reply = cookie.reply()?;
-    
+
     if let Some(val) = reply.value8() {
         // WM_NAME is typically a string, possibly Latin-1 but often ASCII/UTF-8 compatible for our prefix
         let bytes: Vec<u8> = val.collect();
@@ -396,7 +387,7 @@ fn register_hotkey(
             root,
             effective_modmask,
             keycode,
-            GrabMode::SYNC, // SYNC to allow ReplayKeyboard decision
+            GrabMode::SYNC,  // SYNC to allow ReplayKeyboard decision
             GrabMode::ASYNC, // Keep mouse processing normal
         )
         .with_context(|| {
