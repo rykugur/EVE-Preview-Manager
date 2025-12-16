@@ -19,7 +19,6 @@ use std::thread::{self, JoinHandle};
 use tokio::sync::mpsc::Sender;
 use tracing::{debug, error, info, warn};
 
-// use crate::config::HotkeyBinding; // Unused
 use crate::constants::{input, paths, permissions};
 use crate::input::backend::{BackendCapabilities, HotkeyBackend, HotkeyConfiguration};
 use crate::input::device_detection;

@@ -20,7 +20,7 @@ use super::event_handler::{EventContext, handle_event};
 use super::font;
 use super::session_state::SessionState;
 use super::thumbnail::Thumbnail;
-// use super::window_detection::check_and_create_window; // Moved to window_detection
+
 use std::thread::JoinHandle;
 use x11rb::rust_connection::RustConnection;
 
