@@ -367,7 +367,8 @@ impl Config {
                                     // Found in both: update position/dim from disk, keep GUI overrides
                                     gui_settings.x = disk_settings.x;
                                     gui_settings.y = disk_settings.y;
-                                    gui_settings.dimensions = disk_settings.dimensions;
+                                    // Don't overwrite dimensions - GUI state is authoritative (it updates from disk via polling, but allows user overrides)
+                                    // gui_settings.dimensions = disk_settings.dimensions;
                                 } else {
                                     // Found only on disk: add to GUI config
                                     profile_to_save

@@ -160,7 +160,8 @@ impl SharedState {
                         // Character exists in both: keep GUI dimensions, use disk position (x, y)
                         gui_settings.x = disk_settings.x;
                         gui_settings.y = disk_settings.y;
-                        gui_settings.dimensions = disk_settings.dimensions;
+                        // Don't overwrite dimensions - GUI state is authoritative
+                        // gui_settings.dimensions = disk_settings.dimensions;
                     } else if !char_name.is_empty() {
                         // Character only in disk (daemon added it): preserve it completely
                         merged_profile
