@@ -231,24 +231,40 @@ fn render_character_editor_column(
                                 ui.horizontal(|ui| {
                                     if let Some(binding) = profile.character_hotkeys.get(&character)
                                     {
-                                        ui.label(format!("[{}]", binding.display_name()));
-                                        if ui.small_button("Clear").clicked() {
-                                            profile.character_hotkeys.remove(&character);
-                                            *changed = true;
-                                        }
+                                        ui.label(
+                                            egui::RichText::new(binding.display_name())
+                                                .strong()
+                                                .color(ui.style().visuals.text_color()),
+                                        );
                                     } else {
-                                        let bind_text = if hotkey_state.is_capturing_for(&character)
-                                        {
-                                            "Capturing..."
-                                        } else {
-                                            "⌨ Bind"
-                                        };
-                                        if ui.button(bind_text).clicked() {
-                                            hotkey_state.start_key_capture_for_character(
-                                                character.clone(),
-                                                profile.hotkey_backend,
-                                            );
-                                        }
+                                        ui.label(
+                                            egui::RichText::new("Not set")
+                                                .strong()
+                                                .color(ui.style().visuals.weak_text_color()),
+                                        );
+                                    }
+
+                                    let bind_text = if hotkey_state.is_capturing_for(&character) {
+                                        "Capturing..."
+                                    } else {
+                                        "⌨ Bind"
+                                    };
+
+                                    if ui.button(bind_text).clicked() {
+                                        hotkey_state.start_key_capture_for_character(
+                                            character.clone(),
+                                            profile.hotkey_backend,
+                                        );
+                                    }
+
+                                    if profile.character_hotkeys.contains_key(&character)
+                                        && ui
+                                            .small_button("✖")
+                                            .on_hover_text("Clear binding")
+                                            .clicked()
+                                    {
+                                        profile.character_hotkeys.remove(&character);
+                                        *changed = true;
                                     }
                                 });
                                 ui.end_row();
