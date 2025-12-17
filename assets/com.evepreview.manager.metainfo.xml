@@ -34,15 +34,15 @@
   </categories>
 
   <screenshots>
-    <screenshot>
+    <screenshot type="default">
       <image>https://manager.evepreview.com/screenshots/appearance.png</image>
       <caption>Appearance settings</caption>
     </screenshot>
-    <screenshot>
+    <screenshot type="default">
       <image>https://manager.evepreview.com/screenshots/hotkeys.png</image>
       <caption>Hotkey settings</caption>
     </screenshot>
-    <screenshot>
+    <screenshot type="default">
       <image>https://manager.evepreview.com/screenshots/characters.png</image>
       <caption>Character settings</caption>
     </screenshot>
