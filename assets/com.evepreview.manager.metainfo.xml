@@ -12,10 +12,10 @@
     </p>
     <p>Key features include:</p>
     <ul>
-      <li><strong>Live Previews:</strong> Real-time thumbnails of all running clients.</li>
-      <li><strong>Rapid Switching:</strong> Robust hotkey support to instantly switch focus between clients.</li>
-      <li><strong>Custom layouts:</strong> Configure thumbnail position, size, and opacity to fit your screen setup.</li>
-      <li><strong>Performance Focused:</strong> Built with Rust for minimal CPU/GPU overhead.</li>
+      <li>Live Previews: Real-time thumbnails of all running clients.</li>
+      <li>Rapid Switching: Robust hotkey support to instantly switch focus between clients.</li>
+      <li>Custom layouts: Configure thumbnail position, size, and opacity to fit your screen setup.</li>
+      <li>Performance Focused: Built with Rust for minimal CPU/GPU overhead.</li>
     </ul>
     <p>NOTE: This application is not affiliated with CCP Games.</p>
   </description>
