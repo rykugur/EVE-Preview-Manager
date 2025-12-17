@@ -4,7 +4,7 @@ use std::process::{Child, Command};
 
 #[cfg(target_os = "linux")]
 pub fn load_tray_icon_pixmap() -> Result<ksni::Icon> {
-    let icon_bytes = include_bytes!("../../assets/icon.png");
+    let icon_bytes = include_bytes!("../../assets/com.evepreview.manager.png");
     let decoder = png::Decoder::new(Cursor::new(icon_bytes));
     let mut reader = decoder.read_info()?;
     let mut buf = vec![
@@ -46,7 +46,7 @@ pub fn load_tray_icon_pixmap() -> Result<ksni::Icon> {
 /// Load window icon from embedded PNG (same as tray icon)
 #[cfg(target_os = "linux")]
 pub fn load_window_icon() -> Result<egui::IconData> {
-    let icon_bytes = include_bytes!("../../assets/icon.png");
+    let icon_bytes = include_bytes!("../../assets/com.evepreview.manager.png");
     let decoder = png::Decoder::new(Cursor::new(icon_bytes));
     let mut reader = decoder.read_info()?;
     let mut buf = vec![
