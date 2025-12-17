@@ -139,9 +139,9 @@ fn spawn_listener_impl(
                 target_path
             } else {
                 std::path::Path::new("/dev/input/by-id")
-                .join(&target_path)
-                .canonicalize()
-                .with_context(|| format!("Failed to canonicalize {}", target_path.display()))?
+                    .join(&target_path)
+                    .canonicalize()
+                    .with_context(|| format!("Failed to canonicalize {}", target_path.display()))?
             };
 
             info!(selected_device = %absolute_target.display(), "Resolved device path");
@@ -232,9 +232,9 @@ fn listen_for_hotkeys(
                     .as_ref()
                     .is_some_and(|fwd| fwd.key_code == key_code)
                     || config
-                    .backward_key
-                    .as_ref()
-                    .is_some_and(|bwd| bwd.key_code == key_code);
+                        .backward_key
+                        .as_ref()
+                        .is_some_and(|bwd| bwd.key_code == key_code);
                 let is_character_key = config
                     .character_hotkeys
                     .iter()
@@ -251,7 +251,8 @@ fn listen_for_hotkeys(
                 if is_cycle_key || is_character_key || is_profile_key || is_skip_key {
                     // Capture timestamp from the event
                     let timestamp = event.timestamp();
-                    let millis = timestamp.duration_since(std::time::UNIX_EPOCH)
+                    let millis = timestamp
+                        .duration_since(std::time::UNIX_EPOCH)
                         .unwrap_or_default()
                         .as_millis() as u32;
                     potential_hotkey_presses.push((key_code, millis));
@@ -361,30 +362,27 @@ fn listen_for_hotkeys(
             }
 
             if !handled && command_to_send.is_none() {
-                 // Check profile hotkeys
-                 for profile_hotkey in &config.profile_hotkeys {
-                     if profile_hotkey.matches(
-                         key_code,
-                         ctrl_pressed,
-                         shift_pressed,
-                         alt_pressed,
-                         super_pressed,
-                     ) {
-                         info!(
-                             binding = %profile_hotkey.display_name(),
-                             "Profile hotkey pressed, sending command"
-                         );
-                         command_to_send = Some(CycleCommand::ProfileHotkey(profile_hotkey.clone()));
-                         break; // Only send one command per keypress
-                     }
-                 }
+                // Check profile hotkeys
+                for profile_hotkey in &config.profile_hotkeys {
+                    if profile_hotkey.matches(
+                        key_code,
+                        ctrl_pressed,
+                        shift_pressed,
+                        alt_pressed,
+                        super_pressed,
+                    ) {
+                        info!(
+                            binding = %profile_hotkey.display_name(),
+                            "Profile hotkey pressed, sending command"
+                        );
+                        command_to_send = Some(CycleCommand::ProfileHotkey(profile_hotkey.clone()));
+                        break; // Only send one command per keypress
+                    }
+                }
             }
 
             if let Some(command) = command_to_send {
-                let timestamped_command = TimestampedCommand {
-                    command,
-                    timestamp,
-                };
+                let timestamped_command = TimestampedCommand { command, timestamp };
                 sender
                     .blocking_send(timestamped_command)
                     .context("Failed to send hotkey command")?;

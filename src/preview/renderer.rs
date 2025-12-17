@@ -521,6 +521,9 @@ impl<'a> ThumbnailRenderer<'a> {
     }
 
     /// Sends a request to the Window Manager to focus the source window.
+    ///
+    /// # Arguments
+    /// * `timestamp` - X11 timestamp from the input event that triggered this action.
     pub fn focus(&self, character_name: &str, timestamp: u32) -> Result<()> {
         let ev = ClientMessageEvent {
             response_type: CLIENT_MESSAGE_EVENT,

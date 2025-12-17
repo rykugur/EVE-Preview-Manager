@@ -217,6 +217,9 @@ impl<'a> Thumbnail<'a> {
     }
 
     /// Requests focus for the source EVE client.
+    ///
+    /// # Arguments
+    /// * `timestamp` - X11 timestamp from the input event.
     pub fn focus(&self, timestamp: u32) -> Result<()> {
         self.renderer.focus(&self.character_name, timestamp)
     }

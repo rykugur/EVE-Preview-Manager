@@ -46,6 +46,12 @@ pub struct HotkeyConfiguration {
 pub trait HotkeyBackend: Sized {
     /// Spawn the backend's listening threads
     ///
+    /// # Arguments
+    /// * `sender` - Channel to send detected hotkey commands to the main loop
+    /// * `config` - Hotkey binding configuration
+    /// * `device_id` - Optional specific input device to listen on (backend specific)
+    /// * `require_eve_focus` - If true, backend should only trigger when EVE is focused (optimization)
+    ///
     /// Returns handles to spawned threads for cleanup on shutdown
     fn spawn(
         sender: Sender<TimestampedCommand>,

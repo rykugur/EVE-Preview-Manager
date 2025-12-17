@@ -214,6 +214,9 @@ pub fn is_eve_window_focused(
 }
 
 /// Requests the window manager to grant focus to the specified window using standard EWMH protocols
+///
+/// # Arguments
+/// * `timestamp` - The timestamp of the input event that triggered this request (required by EWMH)
 pub fn activate_window(
     conn: &RustConnection,
     screen: &Screen,
@@ -233,13 +236,7 @@ pub fn activate_window(
         sequence: 0,
         window,
         type_: atoms.net_active_window,
-        data: ClientMessageData::from([
-            x11::ACTIVE_WINDOW_SOURCE_PAGER,
-            timestamp,
-            0,
-            0,
-            0,
-        ]),
+        data: ClientMessageData::from([x11::ACTIVE_WINDOW_SOURCE_PAGER, timestamp, 0, 0, 0]),
     };
 
     conn.send_event(
