@@ -12,12 +12,25 @@ use crate::gui::{state::SharedState, utils::load_tray_icon_pixmap};
 pub struct AppTray {
     pub state: Arc<Mutex<SharedState>>,
     pub ctx: egui::Context,
+    pub is_flatpak: bool,
 }
 
 #[cfg(target_os = "linux")]
 impl ksni::Tray for AppTray {
     fn id(&self) -> String {
-        "eve-preview-manager".into()
+        if self.is_flatpak {
+            "com.evepreview.manager".into()
+        } else {
+            "eve-preview-manager".into()
+        }
+    }
+
+    fn icon_name(&self) -> String {
+        if self.is_flatpak {
+            "com.evepreview.manager".into()
+        } else {
+            "eve-preview-manager".into()
+        }
     }
 
     fn title(&self) -> String {

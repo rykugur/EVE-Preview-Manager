@@ -71,12 +71,21 @@ impl ManagerApp {
                 .expect("Failed to build Tokio runtime for tray");
 
             runtime.block_on(async move {
+                let is_flatpak = std::env::var("FLATPAK_ID").is_ok();
                 let tray = AppTray {
                     state: state_clone,
                     ctx,
+                    is_flatpak,
                 };
 
-                match tray.spawn().await {
+                let result = if is_flatpak {
+                    info!("Running in Flatpak: spawning tray without D-Bus name");
+                    tray.spawn_without_dbus_name().await
+                } else {
+                    tray.spawn().await
+                };
+
+                match result {
                     Ok(handle) => {
                         info!("Tray icon created via ksni/D-Bus");
                         // Event loop for tray management
