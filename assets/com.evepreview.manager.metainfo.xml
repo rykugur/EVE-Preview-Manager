@@ -50,6 +50,14 @@
   </screenshots>
 
   <releases>
+    <release version="1.3.2" date="2025-12-18">
+      <description>
+        <p>Other:</p>
+        <ul>
+          <li>Updated AppStream metainfo for Flathub submission</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.3.1" date="2025-12-18">
       <description>
         <p>Other:</p>
