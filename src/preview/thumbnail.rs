@@ -39,6 +39,7 @@ pub struct Thumbnail<'a> {
     pub state: ThumbnailState,
     pub hidden: bool, // Tracks if hidden by "hide_when_no_focus"
     pub input_state: InputState,
+    pub preview_mode: crate::types::PreviewMode,
 
     // === Geometry (public, immutable after creation) ===
     pub dimensions: Dimensions,
@@ -67,6 +68,7 @@ impl<'a> Thumbnail<'a> {
         font_renderer: &'a FontRenderer,
         position: Option<Position>,
         dimensions: Dimensions,
+        preview_mode: crate::types::PreviewMode,
     ) -> Result<Self> {
         // Validate dimensions are non-zero
         if dimensions.width == 0 || dimensions.height == 0 {
@@ -113,6 +115,7 @@ impl<'a> Thumbnail<'a> {
             state: ThumbnailState::default(),
             hidden: false,
             input_state: InputState::default(),
+            preview_mode,
             dimensions,
             current_position: Position::new(x, y),
             renderer,
@@ -209,8 +212,29 @@ impl<'a> Thumbnail<'a> {
                     .minimized(&self.character_name, self.dimensions)?;
             }
             _ => {
-                self.renderer
-                    .update(&self.character_name, self.dimensions)?;
+                match &self.preview_mode {
+                    crate::types::PreviewMode::Live => {
+                        self.renderer
+                            .update(&self.character_name, self.dimensions)?;
+                    }
+                    crate::types::PreviewMode::Static { color } => {
+                        let color_u32 = crate::gui::utils::parse_hex_color(color)
+                            .map_err(|_| anyhow::anyhow!("Invalid hex color: {}", color))?;
+
+                        let x_color = x11rb::protocol::render::Color {
+                            red: (color_u32.r() as u16) * 257,
+                            green: (color_u32.g() as u16) * 257,
+                            blue: (color_u32.b() as u16) * 257,
+                            alpha: (color_u32.a() as u16) * 257,
+                        };
+
+                        self.renderer.update_static(
+                            &self.character_name,
+                            self.dimensions,
+                            x_color,
+                        )?;
+                    }
+                }
             }
         }
         Ok(())
@@ -277,6 +301,8 @@ impl<'a> Thumbnail<'a> {
                     "Failed to resize after character change to '{}'",
                     self.character_name
                 ))?;
+
+            self.preview_mode = settings.preview_mode;
         }
 
         // Force update of name (and implicit repaint if visible)

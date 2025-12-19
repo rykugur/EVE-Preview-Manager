@@ -183,6 +183,8 @@ pub struct CharacterSettings {
     pub override_inactive_border_size: Option<u16>,
     #[serde(default)]
     pub override_text_color: Option<String>,
+    #[serde(default)]
+    pub preview_mode: PreviewMode,
 }
 
 impl CharacterSettings {
@@ -198,11 +200,28 @@ impl CharacterSettings {
             override_active_border_size: None,
             override_inactive_border_size: None,
             override_text_color: None,
+            preview_mode: PreviewMode::default(),
         }
     }
 
     pub fn position(&self) -> Position {
         Position::new(self.x, self.y)
+    }
+}
+
+/// Preview rendering mode for the thumbnail
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PreviewMode {
+    /// Live preview from the source window (default)
+    Live,
+    /// Static solid color fill
+    Static { color: String },
+}
+
+impl Default for PreviewMode {
+    fn default() -> Self {
+        Self::Live
     }
 }
 
@@ -393,5 +412,23 @@ mod tests {
         let settings = CharacterSettings::new(100, 100, 0, 0);
         assert_eq!(settings.dimensions.width, 0);
         assert_eq!(settings.dimensions.height, 0);
+    }
+
+    #[test]
+    fn test_preview_mode_serialization() {
+        let mode = PreviewMode::Static {
+            color: "#FF0000".to_string(),
+        };
+        let json = serde_json::to_string(&mode).unwrap();
+        // Check for correct format: {"static":{"color":"#FF0000"}}
+        let expected = "{\"static\":{\"color\":\"#FF0000\"}}";
+        assert_eq!(json, expected);
+
+        let deserialized: PreviewMode = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized, mode);
+
+        let live = PreviewMode::Live;
+        let json_live = serde_json::to_string(&live).unwrap();
+        assert_eq!(json_live, "\"live\"");
     }
 }

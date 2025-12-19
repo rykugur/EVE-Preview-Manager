@@ -438,6 +438,34 @@ impl<'a> ThumbnailRenderer<'a> {
         Ok(())
     }
 
+    /// Fills the thumbnail with a static solid color.
+    pub fn fill_static(
+        &self,
+        character_name: &str,
+        dimensions: Dimensions,
+        color: x11rb::protocol::render::Color,
+    ) -> Result<()> {
+        let rect = x11rb::protocol::xproto::Rectangle {
+            x: 0,
+            y: 0,
+            width: dimensions.width,
+            height: dimensions.height,
+        };
+
+        self.conn
+            .render_fill_rectangles(
+                PictOp::SRC,
+                self.dst_picture,
+                color,
+                &[rect],
+            )
+            .context(format!(
+                "Failed to fill static color for '{}'",
+                character_name
+            ))?;
+        Ok(())
+    }
+
     /// Draws the border and updates the name overlay.
     ///
     /// # Arguments
@@ -515,6 +543,19 @@ impl<'a> ThumbnailRenderer<'a> {
             "Failed to capture source window for '{}'",
             character_name
         ))?;
+        self.overlay(character_name, dimensions)
+            .context(format!("Failed to apply overlay for '{}'", character_name))?;
+        Ok(())
+    }
+
+    /// Logic for static update cycle: fill static color -> apply overlay.
+    pub fn update_static(
+        &self,
+        character_name: &str,
+        dimensions: Dimensions,
+        color: x11rb::protocol::render::Color,
+    ) -> Result<()> {
+        self.fill_static(character_name, dimensions, color)?;
         self.overlay(character_name, dimensions)
             .context(format!("Failed to apply overlay for '{}'", character_name))?;
         Ok(())

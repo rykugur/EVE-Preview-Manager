@@ -624,6 +624,49 @@ fn render_overrides_section(
                 });
             });
         }
+
+        // Preview Mode (Static Mode)
+        ui.horizontal(|ui| {
+            ui.label("Static Mode:");
+            let mut is_static = matches!(settings.preview_mode, crate::types::PreviewMode::Static { .. });
+
+            if ui.checkbox(&mut is_static, "Enabled").changed() {
+                if is_static {
+                    // Enable Static Mode (Default to Black)
+                    settings.preview_mode = crate::types::PreviewMode::Static {
+                        color: "#000000".to_string(),
+                    };
+                } else {
+                    // Disable Static Mode (Revert to Live)
+                    settings.preview_mode = crate::types::PreviewMode::Live;
+                }
+                *changed = true;
+            }
+        });
+
+        // Static Mode Settings (Indented)
+        if let crate::types::PreviewMode::Static { ref mut color } = settings.preview_mode {
+            ui.indent("static_mode_details", |ui| {
+                ui.horizontal(|ui| {
+                    ui.label("Color:");
+                    let mut color_str = color.clone();
+                    let text_edit = egui::TextEdit::singleline(&mut color_str).desired_width(100.0);
+
+                    if ui.add(text_edit).changed() {
+                        *color = color_str.clone();
+                        *changed = true;
+                    }
+
+                    if let Ok(mut c) = crate::gui::utils::parse_hex_color(&color_str)
+                        && ui.color_edit_button_srgba(&mut c).changed()
+                    {
+                        let new_hex = crate::gui::utils::format_hex_color(c);
+                        *color = new_hex;
+                        *changed = true;
+                    }
+                });
+            });
+        }
     });
 }
 
