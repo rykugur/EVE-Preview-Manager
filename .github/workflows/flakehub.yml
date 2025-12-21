@@ -1,0 +1,20 @@
+name: "EVE-Preview-Manager"
+on:
+  push:
+    tags:
+      - 'v?[0-9]+.[0-9]+.[0-9]+'
+
+jobs:
+  flakehub:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: DeterminateSystems/determinate-nix-action@v9
+      - uses: DeterminateSystems/flakehub-push@main
+        with:
+          name: "h0lylag/EVE-Preview-Manager"
+          visibility: "public"
+          rolling: true
