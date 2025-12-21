@@ -39,6 +39,9 @@ pkgs.rustPlatform.buildRustPackage rec {
 
   # Wrap binary with LD_LIBRARY_PATH for runtime-loaded libs (OpenGL, Wayland, X11)
   postInstall = ''
+    install -Dm644 assets/com.evepreview.manager.desktop $out/share/applications/eve-preview-manager.desktop
+    install -Dm644 assets/com.evepreview.manager.svg $out/share/icons/hicolor/scalable/apps/eve-preview-manager.svg
+    substituteInPlace $out/share/applications/eve-preview-manager.desktop --replace "Icon=com.evepreview.manager" "Icon=eve-preview-manager"
     wrapProgram $out/bin/eve-preview-manager --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeLibs}"
   '';
 
