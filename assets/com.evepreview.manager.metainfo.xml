@@ -6,7 +6,7 @@
   <developer id="io.github.h0lylag">
     <name>h0lylag</name>
   </developer>
-  <summary>Window preview manager for EVE Online</summary>
+  <summary>Utility for EVE Online multiboxing with real-time thumbnail previews and customizable hotkeys</summary>
 
   <description>
     <p>
@@ -16,7 +16,8 @@
     <ul>
       <li>Live Previews: Real-time thumbnails of all running clients.</li>
       <li>Rapid Switching: Robust hotkey support to instantly switch focus between clients.</li>
-      <li>Custom layouts: Configure thumbnail position, size, and opacity to fit your screen setup.</li>
+      <li>Customization: Configurable font, borders, colors, size, opacity, and more</li>
+      <li>Profiles: Save and load multiple configurations on the fly for different setups</li>
     </ul>
     <p>NOTE: This application is not affiliated with CCP Games.</p>
   </description>
@@ -26,7 +27,7 @@
   <metadata_license>MIT</metadata_license>
   <project_license>MIT</project_license>
 
-  <url type="homepage">https://github.com/h0lylag/EVE-Preview-Manager</url>
+  <url type="homepage">https://epm.sh/</url>
   <url type="bugtracker">https://github.com/h0lylag/EVE-Preview-Manager/issues</url>
   <url type="vcs-browser">https://github.com/h0lylag/EVE-Preview-Manager</url>
 
