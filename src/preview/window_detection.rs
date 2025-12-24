@@ -31,8 +31,7 @@ pub fn identify_window(
     state: &mut SessionState,
     custom_rules: &[CustomWindowRule],
 ) -> Result<Option<WindowIdentity>> {
-    // 1. Check if it's an EVE Client (Standard/Steam/Wine)
-    // We reuse existing robust detection logic
+    // Check for EVE Client identity first (Standard/Steam/Wine) using robust detection
     if let Some(eve_window) = check_eve_window_internal(ctx, window, state)? {
         let name = eve_window;
         return Ok(Some(WindowIdentity {
@@ -60,11 +59,13 @@ pub fn identify_window(
     };
 
     for rule in custom_rules {
+        // Validation: If a pattern (title/class) is defined in the rule,
+        // it acts as a strict filter that MUST match the window.
         let matches_title = rule
             .title_pattern
             .as_ref()
             .map(|p| wm_name.to_lowercase().contains(&p.to_lowercase()))
-            .unwrap_or(false); // If rule has title pattern, it MUST match
+            .unwrap_or(false);
 
         let matches_class = rule
             .class_pattern
@@ -136,6 +137,7 @@ fn check_eve_window_internal(
         None
     };
 
+    // Skip our own windows to avoid recursion
     if pid.is_some_and(|p| p == std::process::id()) {
         return Ok(None);
     }
@@ -200,12 +202,9 @@ pub fn check_and_create_window<'a>(
         }
     }
 
-    // Skip thumbnail creation if thumbnails are disabled (but window is still tracked via identity/cycle potentially?)
-    // Actually, if we return None here, it might not get added to cycle state?
-    // In original code, returning None means NO thumbnail.
-    // Cycle state registration is done in `scan_eve_windows` for initial list,
-    // and `handle_create_notify` calls `identify_window` SEPARATELY before calling this.
-    // So `check_and_create_window` is strictly for THUMBNAIL creation.
+    // Cycle state registration is handled separately in `scan_eve_windows` for the initial list
+    // and `handle_create_notify` calls `identify_window` before calling this.
+    // This function is strictly for determining if we should create a renderable thumbnail.
 
     if !ctx.config.enabled {
         return Ok(None);
@@ -279,8 +278,8 @@ pub fn check_and_create_window<'a>(
     if is_minimized {
         thumbnail.minimized()?;
     } else {
-        // Removed forced update to prevent crashes with fleeting windows (e.g. Firefox popups).
-        // Standard X11 Damage events will trigger the first update naturally.
+        // NOTE: We rely on standard X11 Damage events to trigger the first update naturally.
+        // Forcing an update here caused issues with fleeting windows.
     }
 
     info!(
@@ -343,8 +342,8 @@ pub fn scan_eve_windows<'a>(
                                 eve.dimensions.height,
                             );
 
-                            // Fix: Removed invalid is_custom_source() call.
-                            // Logic is simplified: check if character name matches any custom rule alias.
+                            // Route settings to the correct map based on whether this alias matches a Custom Rule.
+                            // This ensures separation even if originally detected as a generic client.
                             let is_custom_alias = daemon_config
                                 .profile
                                 .custom_windows
