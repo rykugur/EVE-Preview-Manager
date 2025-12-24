@@ -163,6 +163,7 @@ fn render_character_editor_column(
                 profile.character_thumbnails.keys().cloned().collect();
             // Case-insensitive sort
             char_names.sort_by_key(|a| a.to_lowercase());
+            let mut to_delete = Vec::new();
 
             for character in char_names {
                 // Ensure CharacterSettings entry exists (it should, since we pulled keys from it,
@@ -195,8 +196,15 @@ fn render_character_editor_column(
                         ui.label(egui::RichText::new(format!("[{}]", binding.display_name())));
                     }
 
-                    // Add padding on the right edge
-                    ui.add_space(20.0);
+                    // Delete Button
+                    if ui
+                        .small_button("🗑")
+                        .on_hover_text("Remove Character")
+                        .clicked()
+                    {
+                        to_delete.push(character.clone());
+                        *changed = true;
+                    }
                 });
 
                 if is_expanded {
@@ -290,8 +298,22 @@ fn render_character_editor_column(
                             });
                         ui.add_space(8.0);
                     });
+                    ui.add_space(4.0); // Small space between items instead of large ITEM_SPACING
                 }
-                ui.add_space(4.0); // Small space between items instead of large ITEM_SPACING
+            } // Close the loop over characters
+
+            // Perform deferred deletion
+            for char_to_delete in to_delete {
+                // 1. Remove from settings (thumbnails)
+                profile.character_thumbnails.remove(&char_to_delete);
+
+                // 2. Remove from hotkeys
+                profile.character_hotkeys.remove(&char_to_delete);
+
+                // 3. Remove from all cycle groups
+                for group in &mut profile.cycle_groups {
+                    group.characters.retain(|c| c != &char_to_delete);
+                }
             }
 
             if profile.character_thumbnails.is_empty() {

@@ -556,12 +556,11 @@ impl Config {
                                     gui_settings.y = disk_settings.y;
                                     // Don't overwrite dimensions - GUI state is authoritative (it updates from disk via polling, but allows user overrides)
                                     // gui_settings.dimensions = disk_settings.dimensions;
-                                } else {
-                                    // Found only on disk: add to GUI config
-                                    profile_to_save
-                                        .character_thumbnails
-                                        .insert(char_name.clone(), disk_settings.clone());
                                 }
+                                // REMOVED: Do NOT re-add characters found on disk but missing from memory.
+                                // If they are missing from the GUI state, it means the user likely deleted them.
+                                // If they are valid new windows found by the daemon, the daemon will re-add them
+                                // to the config on its next pass/save cycle. This fixes the "zombie character" bug.
                             }
                         }
                     }

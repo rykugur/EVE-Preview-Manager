@@ -178,12 +178,10 @@ impl SharedState {
                         gui_settings.y = disk_settings.y;
                         // Don't overwrite dimensions - GUI state is authoritative
                         // gui_settings.dimensions = disk_settings.dimensions;
-                    } else if !char_name.is_empty() {
-                        // Character only in disk (daemon added it): preserve it completely
-                        merged_profile
-                            .character_thumbnails
-                            .insert(char_name.clone(), disk_settings.clone());
                     }
+                    // REMOVED: Do NOT re-add characters found on disk but missing from memory.
+                    // This was resurrecting deleted characters.
+                    // New/Active characters will be re-added by the daemon automatically.
                 }
             }
 
