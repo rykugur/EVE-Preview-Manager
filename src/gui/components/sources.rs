@@ -464,12 +464,6 @@ impl SourcesTab {
                         self.new_rule.limit = false;
                     }
                 });
-
-                if !is_valid {
-                    ui.weak(
-                        "Display Name and either Class or Title pattern (or both) are required.",
-                    );
-                }
             });
         });
 
