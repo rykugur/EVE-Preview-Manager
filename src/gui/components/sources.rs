@@ -37,9 +37,12 @@ impl SourcesTab {
         let mut changed = false;
 
         ui.heading("Custom Sources");
-        ui.label("Add external applications to preview.");
-        ui.label("⚠ Applications must run in X11 or XWayland mode to be detected.");
-        ui.weak("(Feature is Work in Progress)");
+        ui.label("Add external applications to preview. Applications must run in X11 or XWayland mode to be detected.");
+        ui.label(
+            egui::RichText::new("⚠ Feature is a work in progress")
+                .weak()
+                .small(),
+        );
         ui.add_space(10.0);
 
         // -- Rules List (Expandable) --
