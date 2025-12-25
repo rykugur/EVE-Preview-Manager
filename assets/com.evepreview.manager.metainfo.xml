@@ -6,7 +6,7 @@
   <developer id="io.github.h0lylag">
     <name>h0lylag</name>
   </developer>
-  <summary>Utility for EVE Online multiboxing with real-time thumbnail previews and customizable hotkeys</summary>
+  <summary>Utility for EVE Online multiboxing with real-time previews and hotkeys</summary>
 
   <description>
     <p>
@@ -51,6 +51,16 @@
   </screenshots>
 
   <releases>
+    <release version="1.5.0" date="2025-12-24">
+      <description>
+        <p>New Features:</p>
+        <ul>
+            <li>Expanded cycle groups: Profiles now support multiple independent cycle groups, enabling cycling through multiple groups of characters with separate hotkeys.</li>
+            <li>Custom Sources: Experimental support for adding and previewing custom windows.</li>
+            <li>Preview Toggle: New hotkey to temporarily disable or enable thumbnail previews.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.4.0" date="2025-12-20">
       <description>
         <p>New Features:</p>
