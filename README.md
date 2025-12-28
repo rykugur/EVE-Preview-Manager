@@ -78,7 +78,9 @@ yay -S eve-preview-manager
 Add the input to your `flake.nix`. We use FlakeHub for versioned releases.
 
 ```nix
-inputs.eve-preview-manager.url = "https://flakehub.com/f/h0lylag/EVE-Preview-Manager/*";
+inputs = {
+  eve-preview-manager.url = "https://flakehub.com/f/h0lylag/EVE-Preview-Manager/*";
+};
 ```
 
 #### 2. Add Package
@@ -86,7 +88,6 @@ inputs.eve-preview-manager.url = "https://flakehub.com/f/h0lylag/EVE-Preview-Man
 Add the package to your system packages.
 
 ```nix
-{ inputs, pkgs, ... }:
 {
   environment.systemPackages = [
     eve-preview-manager.packages.${pkgs.stdenv.hostPlatform.system}.default
