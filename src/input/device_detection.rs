@@ -8,7 +8,7 @@ use evdev::{Device, KeyCode};
 use std::path::{Path, PathBuf};
 use tracing::info;
 
-use crate::constants::{input, paths, permissions};
+use crate::common::constants::{input, paths, permissions};
 
 /// Scans the system for compatible input devices, returning them with their paths for direct access
 pub fn find_all_input_devices_with_paths() -> Result<Vec<(Device, PathBuf)>> {

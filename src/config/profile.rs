@@ -10,7 +10,7 @@ use std::fs;
 use std::path::PathBuf;
 use tracing::info;
 
-use crate::types::CharacterSettings;
+use crate::common::types::CharacterSettings;
 
 /// A named group of characters for cycling
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -185,11 +185,11 @@ pub struct Profile {
 // Default value functions
 // Default value functions
 pub(crate) fn default_border_size() -> u16 {
-    crate::constants::defaults::border::SIZE
+    crate::common::constants::defaults::border::SIZE
 }
 
 pub(crate) fn default_profile_name() -> String {
-    crate::constants::defaults::behavior::PROFILE_NAME.to_string()
+    crate::common::constants::defaults::behavior::PROFILE_NAME.to_string()
 }
 
 pub(crate) fn default_hotkey_backend() -> HotkeyBackendType {
@@ -197,27 +197,27 @@ pub(crate) fn default_hotkey_backend() -> HotkeyBackendType {
 }
 
 pub(crate) fn default_window_width() -> u16 {
-    crate::constants::defaults::manager::WINDOW_WIDTH
+    crate::common::constants::defaults::manager::WINDOW_WIDTH
 }
 
 pub(crate) fn default_window_height() -> u16 {
-    crate::constants::defaults::manager::WINDOW_HEIGHT
+    crate::common::constants::defaults::manager::WINDOW_HEIGHT
 }
 
 pub(crate) fn default_snap_threshold() -> u16 {
-    crate::constants::defaults::behavior::SNAP_THRESHOLD
+    crate::common::constants::defaults::behavior::SNAP_THRESHOLD
 }
 
 pub(crate) fn default_preserve_thumbnail_position_on_swap() -> bool {
-    crate::constants::defaults::behavior::PRESERVE_POSITION_ON_SWAP
+    crate::common::constants::defaults::behavior::PRESERVE_POSITION_ON_SWAP
 }
 
 pub(crate) fn default_thumbnail_width() -> u16 {
-    crate::constants::defaults::thumbnail::WIDTH
+    crate::common::constants::defaults::thumbnail::WIDTH
 }
 
 pub(crate) fn default_thumbnail_height() -> u16 {
-    crate::constants::defaults::thumbnail::HEIGHT
+    crate::common::constants::defaults::thumbnail::HEIGHT
 }
 
 pub(crate) fn default_thumbnail_enabled() -> bool {
@@ -225,7 +225,7 @@ pub(crate) fn default_thumbnail_enabled() -> bool {
 }
 
 pub(crate) fn default_border_enabled() -> bool {
-    crate::constants::defaults::border::ENABLED
+    crate::common::constants::defaults::border::ENABLED
 }
 
 pub(crate) fn default_inactive_border_enabled() -> bool {
@@ -233,12 +233,12 @@ pub(crate) fn default_inactive_border_enabled() -> bool {
 }
 
 pub(crate) fn default_inactive_border_color() -> String {
-    crate::constants::defaults::border::INACTIVE_COLOR.to_string()
+    crate::common::constants::defaults::border::INACTIVE_COLOR.to_string()
 }
 
 pub(crate) fn default_text_font_family() -> String {
     // Try to detect best default TrueType font, but don't fail config creation
-    match crate::preview::select_best_default_font() {
+    match crate::daemon::select_best_default_font() {
         Ok((name, _path)) => {
             tracing::info!(font = %name, "Using detected default font for new config");
             name
@@ -257,33 +257,33 @@ pub(crate) fn default_auto_save_thumbnail_positions() -> bool {
 
 fn default_profiles() -> Vec<Profile> {
     vec![Profile {
-        profile_name: crate::constants::defaults::behavior::PROFILE_NAME.to_string(),
-        profile_description: crate::constants::defaults::behavior::PROFILE_DESCRIPTION.to_string(),
+        profile_name: crate::common::constants::defaults::behavior::PROFILE_NAME.to_string(),
+        profile_description: crate::common::constants::defaults::behavior::PROFILE_DESCRIPTION.to_string(),
         thumbnail_default_width: default_thumbnail_width(),
         thumbnail_default_height: default_thumbnail_height(),
         thumbnail_enabled: default_thumbnail_enabled(),
-        thumbnail_opacity: crate::constants::defaults::thumbnail::OPACITY_PERCENT,
-        thumbnail_active_border: crate::constants::defaults::border::ENABLED,
-        thumbnail_active_border_size: crate::constants::defaults::border::SIZE,
-        thumbnail_active_border_color: crate::constants::defaults::border::ACTIVE_COLOR.to_string(),
+        thumbnail_opacity: crate::common::constants::defaults::thumbnail::OPACITY_PERCENT,
+        thumbnail_active_border: crate::common::constants::defaults::border::ENABLED,
+        thumbnail_active_border_size: crate::common::constants::defaults::border::SIZE,
+        thumbnail_active_border_color: crate::common::constants::defaults::border::ACTIVE_COLOR.to_string(),
         thumbnail_inactive_border: default_inactive_border_enabled(),
-        thumbnail_inactive_border_size: crate::constants::defaults::border::SIZE,
+        thumbnail_inactive_border_size: crate::common::constants::defaults::border::SIZE,
         thumbnail_inactive_border_color: default_inactive_border_color(),
-        thumbnail_text_size: crate::constants::defaults::text::SIZE,
-        thumbnail_text_x: crate::constants::defaults::text::OFFSET_X,
-        thumbnail_text_y: crate::constants::defaults::text::OFFSET_Y,
+        thumbnail_text_size: crate::common::constants::defaults::text::SIZE,
+        thumbnail_text_x: crate::common::constants::defaults::text::OFFSET_X,
+        thumbnail_text_y: crate::common::constants::defaults::text::OFFSET_Y,
         thumbnail_text_font: default_text_font_family(),
-        thumbnail_text_color: crate::constants::defaults::text::COLOR.to_string(),
+        thumbnail_text_color: crate::common::constants::defaults::text::COLOR.to_string(),
         thumbnail_auto_save_position: default_auto_save_thumbnail_positions(),
         thumbnail_snap_threshold: default_snap_threshold(),
-        thumbnail_hide_not_focused: crate::constants::defaults::behavior::HIDE_WHEN_NO_FOCUS,
+        thumbnail_hide_not_focused: crate::common::constants::defaults::behavior::HIDE_WHEN_NO_FOCUS,
         thumbnail_preserve_position_on_swap: default_preserve_thumbnail_position_on_swap(),
-        client_minimize_on_switch: crate::constants::defaults::behavior::MINIMIZE_CLIENTS_ON_SWITCH,
+        client_minimize_on_switch: crate::common::constants::defaults::behavior::MINIMIZE_CLIENTS_ON_SWITCH,
         client_minimize_show_overlay: false, // Default: off (clean minimized look)
         hotkey_backend: default_hotkey_backend(), // Default: X11 (secure, no permissions)
         hotkey_input_device: None, // Default: no device selected (only used by evdev backend)
         hotkey_logged_out_cycle: false, // Default: off
-        hotkey_require_eve_focus: crate::constants::defaults::behavior::HOTKEY_REQUIRE_EVE_FOCUS,
+        hotkey_require_eve_focus: crate::common::constants::defaults::behavior::HOTKEY_REQUIRE_EVE_FOCUS,
         hotkey_profile_switch: None,
         hotkey_toggle_skip: None,     // User must configure
         hotkey_toggle_previews: None, // User must configure
@@ -328,8 +328,8 @@ impl Config {
         #[cfg(test)]
         let mut path = std::env::temp_dir().join("eve-preview-manager-test");
 
-        path.push(crate::constants::config::APP_DIR);
-        path.push(crate::constants::config::FILENAME);
+        path.push(crate::common::constants::config::APP_DIR);
+        path.push(crate::common::constants::config::FILENAME);
         path
     }
 
@@ -471,11 +471,11 @@ mod tests {
         assert_eq!(profile.profile_description, "A test profile");
         assert_eq!(
             profile.thumbnail_opacity,
-            crate::constants::defaults::thumbnail::OPACITY_PERCENT
+            crate::common::constants::defaults::thumbnail::OPACITY_PERCENT
         );
         assert_eq!(
             profile.thumbnail_active_border_size,
-            crate::constants::defaults::border::SIZE
+            crate::common::constants::defaults::border::SIZE
         );
         assert!(profile.character_thumbnails.is_empty());
         assert!(profile.custom_source_thumbnails.is_empty());
@@ -488,15 +488,15 @@ mod tests {
         assert_eq!(config.profiles.len(), 1);
         assert_eq!(
             config.global.selected_profile,
-            crate::constants::defaults::behavior::PROFILE_NAME
+            crate::common::constants::defaults::behavior::PROFILE_NAME
         );
         assert_eq!(
             config.global.window_width,
-            crate::constants::defaults::manager::WINDOW_WIDTH
+            crate::common::constants::defaults::manager::WINDOW_WIDTH
         );
         assert_eq!(
             config.global.window_height,
-            crate::constants::defaults::manager::WINDOW_HEIGHT
+            crate::common::constants::defaults::manager::WINDOW_HEIGHT
         );
     }
 
@@ -541,11 +541,11 @@ mod tests {
         assert_eq!(settings.selected_profile, "default");
         assert_eq!(
             settings.window_width,
-            crate::constants::defaults::manager::WINDOW_WIDTH
+            crate::common::constants::defaults::manager::WINDOW_WIDTH
         );
         assert_eq!(
             settings.window_height,
-            crate::constants::defaults::manager::WINDOW_HEIGHT
+            crate::common::constants::defaults::manager::WINDOW_HEIGHT
         );
     }
 
@@ -556,28 +556,28 @@ mod tests {
         // Test migrated behavior settings are properly defaulted
         assert_eq!(
             profile.thumbnail_snap_threshold,
-            crate::constants::defaults::behavior::SNAP_THRESHOLD
+            crate::common::constants::defaults::behavior::SNAP_THRESHOLD
         );
         assert_eq!(
             profile.thumbnail_preserve_position_on_swap,
-            crate::constants::defaults::behavior::PRESERVE_POSITION_ON_SWAP
+            crate::common::constants::defaults::behavior::PRESERVE_POSITION_ON_SWAP
         );
         assert_eq!(
             profile.thumbnail_default_width,
-            crate::constants::defaults::thumbnail::WIDTH
+            crate::common::constants::defaults::thumbnail::WIDTH
         );
         assert_eq!(
             profile.thumbnail_default_height,
-            crate::constants::defaults::thumbnail::HEIGHT
+            crate::common::constants::defaults::thumbnail::HEIGHT
         );
         assert_eq!(
             profile.client_minimize_on_switch,
-            crate::constants::defaults::behavior::MINIMIZE_CLIENTS_ON_SWITCH
+            crate::common::constants::defaults::behavior::MINIMIZE_CLIENTS_ON_SWITCH
         );
         assert!(!profile.client_minimize_show_overlay);
         assert_eq!(
             profile.thumbnail_hide_not_focused,
-            crate::constants::defaults::behavior::HIDE_WHEN_NO_FOCUS
+            crate::common::constants::defaults::behavior::HIDE_WHEN_NO_FOCUS
         );
     }
 

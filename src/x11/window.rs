@@ -7,8 +7,8 @@ use x11rb::errors::ReplyError;
 use x11rb::protocol::xproto::*;
 use x11rb::rust_connection::RustConnection;
 
-use crate::constants::{eve, x11};
-use crate::types::EveWindowType;
+use crate::common::constants::{eve, x11};
+use crate::common::types::EveWindowType;
 
 use super::CachedAtoms;
 

@@ -5,7 +5,7 @@ use x11rb::protocol::render::{ConnectionExt as RenderExt, Fixed, Pictformat};
 use x11rb::protocol::xproto::*;
 use x11rb::rust_connection::RustConnection;
 
-use crate::constants::{fixed_point, x11};
+use crate::common::constants::{fixed_point, x11};
 
 /// Application context holding immutable shared state
 pub struct AppContext<'a> {

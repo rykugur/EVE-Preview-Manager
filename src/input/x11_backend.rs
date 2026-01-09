@@ -249,8 +249,8 @@ fn run_x11_listener(
                             let title =
                                 get_window_title_sync(&conn, focused_window).unwrap_or_default();
                             let is_eve = title
-                                .starts_with(crate::constants::eve::WINDOW_TITLE_PREFIX)
-                                || title == crate::constants::eve::LOGGED_OUT_TITLE;
+                                .starts_with(crate::common::constants::eve::WINDOW_TITLE_PREFIX)
+                                || title == crate::common::constants::eve::LOGGED_OUT_TITLE;
 
                             if !is_eve {
                                 debug!(title = %title, "EVE focus required but not focused, replaying");

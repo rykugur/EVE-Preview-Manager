@@ -19,7 +19,7 @@ use std::thread::{self, JoinHandle};
 use tokio::sync::mpsc::Sender;
 use tracing::{debug, error, info, warn};
 
-use crate::constants::{input, paths, permissions};
+use crate::common::constants::{input, paths, permissions};
 use crate::input::backend::{BackendCapabilities, HotkeyBackend, HotkeyConfiguration};
 use crate::input::device_detection;
 use crate::input::listener::{CycleCommand, TimestampedCommand};

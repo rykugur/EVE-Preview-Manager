@@ -9,8 +9,8 @@ use std::collections::HashMap;
 use tracing::{error, info};
 use x11rb::protocol::render::Color;
 
-use crate::color::{HexColor, Opacity};
-use crate::types::{CharacterSettings, Position, TextOffset};
+use crate::common::color::{HexColor, Opacity};
+use crate::common::types::{CharacterSettings, Position, TextOffset};
 
 /// Snapshot of display settings for the renderer.
 #[derive(Debug, Clone)]
@@ -25,7 +25,7 @@ pub struct DisplayConfig {
     pub inactive_border_enabled: bool,
 
     /// Map of character name -> settings (overrides, aliases, etc)
-    pub character_settings: std::collections::HashMap<String, crate::types::CharacterSettings>,
+    pub character_settings: std::collections::HashMap<String, crate::common::types::CharacterSettings>,
     pub inactive_border_color: Color,
     pub inactive_border_size: u16,
     pub minimized_overlay_enabled: bool,
@@ -137,7 +137,7 @@ impl DaemonConfig {
             // Update session state (position) while preserving user customization (style/mode).
             settings.x = current_position.x;
             settings.y = current_position.y;
-            settings.dimensions = crate::types::Dimensions::new(current_width, current_height);
+            settings.dimensions = crate::common::types::Dimensions::new(current_width, current_height);
 
             self.character_thumbnails
                 .insert(old_name.to_string(), settings);

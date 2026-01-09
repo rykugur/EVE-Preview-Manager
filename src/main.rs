@@ -1,14 +1,10 @@
 #![deny(unsafe_code)]
 
-mod color;
+mod common;
 mod config;
-mod constants;
-mod gui;
+mod daemon;
 mod input;
-mod ipc;
-mod preview;
-mod types;
-
+mod manager;
 mod x11;
 
 use anyhow::Result;
@@ -49,7 +45,7 @@ fn main() -> Result<()> {
 
         rt.block_on(async {
             if let Some(server_name) = cli.ipc_server {
-                preview::run_preview_daemon(server_name).await
+                daemon::run_preview_daemon(server_name).await
             } else {
                 eprintln!("Error: --ipc-server is required for preview daemon mode");
                 std::process::exit(1);
@@ -57,6 +53,6 @@ fn main() -> Result<()> {
         })
     } else {
         // Default mode: launch the configuration GUI which manages the daemon lifecycle
-        gui::run_gui()
+        manager::run_gui()
     }
 }
