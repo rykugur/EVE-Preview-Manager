@@ -101,7 +101,6 @@ fn handle_create_notify(ctx: &mut EventContext, event: CreateNotifyEvent) -> Res
         if ctx.display_config.enabled {
             match check_and_create_window(
                 ctx.app_ctx,
-
                 ctx.daemon_config,
                 ctx.display_config,
                 event.window,
@@ -806,7 +805,12 @@ pub fn handle_event(ctx: &mut EventContext, event: Event) -> Result<()> {
                 } else {
                     // Handle logout: Clear the name, no position/size change
                     thumbnail
-                        .set_character_name(String::new(), None, ctx.display_config, ctx.font_renderer)
+                        .set_character_name(
+                            String::new(),
+                            None,
+                            ctx.display_config,
+                            ctx.font_renderer,
+                        )
                         .context(format!(
                             "Failed to clear thumbnail name after logout from '{}'",
                             old_name

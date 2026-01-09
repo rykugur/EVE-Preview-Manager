@@ -273,6 +273,7 @@ fn setup_hotkeys(daemon_config: &DaemonConfig) -> HotkeyResources {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn run_event_loop(
     conn: &RustConnection,
     screen: &Screen,
@@ -295,14 +296,9 @@ async fn run_event_loop(
     let (ipc_config_tx, mut ipc_config_rx_tokio) = mpsc::channel(1);
 
     std::thread::spawn(move || {
-        loop {
-            match config_rx.recv() {
-                Ok(msg) => {
-                    if let Err(_) = ipc_config_tx.blocking_send(msg) {
-                        break; // Channel closed
-                    }
-                }
-                Err(_) => break, // IPC closed
+        while let Ok(msg) = config_rx.recv() {
+            if ipc_config_tx.blocking_send(msg).is_err() {
+                break; // Channel closed
             }
         }
     });
@@ -372,9 +368,6 @@ async fn run_event_loop(
 
                         // Update DaemonConfig
                         resources.config = new_config;
-
-                        // Rebuild DisplayConfig to apply visual settings live
-                        display_config = resources.config.build_display_config();
 
                         // Rebuild font renderer if font settings changed (optimization: check if changed first)
                         // For now we just rebuild it.
@@ -699,9 +692,14 @@ pub async fn run_preview_daemon(ipc_server_name: String) -> Result<()> {
             formats: &formats,
         };
 
-        eve_clients =
-            super::window_detection::scan_eve_windows(&ctx, &config, &font_renderer, &mut daemon_config, &mut session_state)
-                .context("Failed to get initial list of EVE windows")?;
+        eve_clients = super::window_detection::scan_eve_windows(
+            &ctx,
+            &config,
+            &font_renderer,
+            &mut daemon_config,
+            &mut session_state,
+        )
+        .context("Failed to get initial list of EVE windows")?;
     }
 
     // Register initial windows with cycle state

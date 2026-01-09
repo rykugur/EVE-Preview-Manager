@@ -518,8 +518,14 @@ impl<'a> ThumbnailRenderer<'a> {
         skipped: bool,
         font_renderer: &FontRenderer,
     ) -> Result<()> {
-        self.overlay
-            .draw_border(display_config, character_name, dimensions, focused, skipped, font_renderer)?;
+        self.overlay.draw_border(
+            display_config,
+            character_name,
+            dimensions,
+            focused,
+            skipped,
+            font_renderer,
+        )?;
 
         self.overlay(character_name, dimensions)
             .context(format!("Failed to apply overlay for '{}'", character_name))
@@ -555,7 +561,9 @@ impl<'a> ThumbnailRenderer<'a> {
         // Calculate appropriate border size to preserve the hole
         // We default to focused=false since this is usually called during initialization or generic updates
         // However, if we are focused, the next border() call will correct it.
-        let border_size = self.overlay.calculate_border_size(display_config, character_name, false);
+        let border_size = self
+            .overlay
+            .calculate_border_size(display_config, character_name, false);
 
         // Must clear content area explicitly now
         self.overlay
@@ -565,8 +573,13 @@ impl<'a> ThumbnailRenderer<'a> {
                 character_name
             ))?;
 
-        self.overlay
-            .update_name(display_config, character_name, dimensions, border_size, font_renderer)
+        self.overlay.update_name(
+            display_config,
+            character_name,
+            dimensions,
+            border_size,
+            font_renderer,
+        )
     }
 
     /// Composites the text/border overlay on top of the thumbnail content.

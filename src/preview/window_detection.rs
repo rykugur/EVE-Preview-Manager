@@ -6,8 +6,8 @@ use x11rb::connection::Connection;
 use x11rb::protocol::xproto::*;
 
 use crate::config::DaemonConfig;
-use crate::config::profile::CustomWindowRule;
 use crate::config::DisplayConfig;
+use crate::config::profile::CustomWindowRule;
 use crate::constants;
 use crate::types::Dimensions;
 use crate::x11::{AppContext, get_window_class, is_window_eve, is_window_minimized};
@@ -326,7 +326,15 @@ pub fn scan_eve_windows<'a>(
     for w in windows {
         // Use the map we are building as the "existing_thumbnails" context for limit checks
         // We handle errors gracefully here so one bad window doesn't prevent the daemon from starting
-        match check_and_create_window(ctx, daemon_config, display_config, w, font_renderer, state, &eve_clients) {
+        match check_and_create_window(
+            ctx,
+            daemon_config,
+            display_config,
+            w,
+            font_renderer,
+            state,
+            &eve_clients,
+        ) {
             Ok(Some(eve)) => {
                 // Save initial position and dimensions (important for first-time characters)
                 // Query geometry to get actual position from X11

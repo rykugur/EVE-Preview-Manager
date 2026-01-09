@@ -231,7 +231,12 @@ impl<'a> OverlayRenderer<'a> {
     }
 
     /// Calculates the effective border size implementation
-    pub fn calculate_border_size(&self, config: &DisplayConfig, character_name: &str, focused: bool) -> u16 {
+    pub fn calculate_border_size(
+        &self,
+        config: &DisplayConfig,
+        character_name: &str,
+        focused: bool,
+    ) -> u16 {
         if let Some(settings) = config.character_settings.get(character_name) {
             if focused {
                 settings
@@ -324,7 +329,7 @@ impl<'a> OverlayRenderer<'a> {
                     ))?;
 
                 // ImageText8 renders directly to drawable
-                    self.conn
+                self.conn
                     .image_text8(
                         self.overlay_pixmap,
                         gc,
@@ -476,15 +481,21 @@ impl<'a> OverlayRenderer<'a> {
 
         // Determine effective border size and color source
         let effective_size = self.calculate_border_size(config, character_name, focused);
-        
+
         // 3. Draw Text
         // We pass effective_size mainly if text positioning depended on it,
         // but currently text is positioned by config offset.
-        self.update_name(config, character_name, dimensions, effective_size, font_renderer)
-            .context(format!(
-                "Failed to update name overlay for '{}'",
-                character_name
-            ))?;
+        self.update_name(
+            config,
+            character_name,
+            dimensions,
+            effective_size,
+            font_renderer,
+        )
+        .context(format!(
+            "Failed to update name overlay for '{}'",
+            character_name
+        ))?;
 
         // 4. Draw Border (Top Layer)
         // Only if size > 0 and enabled
@@ -609,11 +620,18 @@ impl<'a> OverlayRenderer<'a> {
         dimensions: Dimensions,
         font_renderer: &FontRenderer,
     ) -> Result<()> {
-        self.draw_border(config, character_name, dimensions, false, false, font_renderer)
-            .context(format!(
-                "Failed to clear border for minimized window '{}'",
-                character_name
-            ))?;
+        self.draw_border(
+            config,
+            character_name,
+            dimensions,
+            false,
+            false,
+            font_renderer,
+        )
+        .context(format!(
+            "Failed to clear border for minimized window '{}'",
+            character_name
+        ))?;
 
         if !config.minimized_overlay_enabled {
             return Ok(());

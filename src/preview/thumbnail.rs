@@ -8,10 +8,10 @@ use tracing::info;
 use x11rb::protocol::damage::Damage;
 use x11rb::protocol::xproto::{ConnectionExt, Window};
 
+use crate::config::DisplayConfig;
 use crate::constants::positioning;
 use crate::types::{Dimensions, Position, ThumbnailState};
 use crate::x11::AppContext;
-use crate::config::DisplayConfig;
 
 use super::font::FontRenderer;
 use super::renderer::ThumbnailRenderer;
@@ -62,6 +62,7 @@ impl<'a> Thumbnail<'a> {
     /// * `font_renderer` - Renderer for shared font resources.
     /// * `position` - Optional initial position (if loaded from config).
     /// * `dimensions` - Initial size.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         ctx: &AppContext<'a>,
         character_name: String,
@@ -229,7 +230,13 @@ impl<'a> Thumbnail<'a> {
     }
 
     /// Updates the thumbnail border based on focus state.
-    pub fn border(&self, display_config: &DisplayConfig, focused: bool, skipped: bool, font_renderer: &FontRenderer) -> Result<()> {
+    pub fn border(
+        &self,
+        display_config: &DisplayConfig,
+        focused: bool,
+        skipped: bool,
+        font_renderer: &FontRenderer,
+    ) -> Result<()> {
         self.renderer.border(
             display_config,
             &self.character_name,
@@ -241,27 +248,43 @@ impl<'a> Thumbnail<'a> {
     }
 
     /// Sets the thumbnail to "Minimized" state and renders the localized overlay.
-    pub fn minimized(&mut self, display_config: &DisplayConfig, font_renderer: &FontRenderer) -> Result<()> {
+    pub fn minimized(
+        &mut self,
+        display_config: &DisplayConfig,
+        font_renderer: &FontRenderer,
+    ) -> Result<()> {
         self.state = ThumbnailState::Minimized;
         // Only render if allowed (might be hidden)
         // If hidden, the rendering will happen next time update() is called after reveal
         if self.is_visible() {
-            self.renderer
-                .minimized(display_config, &self.character_name, self.dimensions, font_renderer)?;
+            self.renderer.minimized(
+                display_config,
+                &self.character_name,
+                self.dimensions,
+                font_renderer,
+            )?;
         }
         Ok(())
     }
 
     /// Triggers a repaint of the thumbnail content and overlay.
-    pub fn update(&self, display_config: &DisplayConfig, font_renderer: &FontRenderer) -> Result<()> {
+    pub fn update(
+        &self,
+        display_config: &DisplayConfig,
+        font_renderer: &FontRenderer,
+    ) -> Result<()> {
         if !self.is_visible() {
             return Ok(());
         }
 
         match self.state {
             ThumbnailState::Minimized => {
-                self.renderer
-                    .minimized(display_config, &self.character_name, self.dimensions, font_renderer)?;
+                self.renderer.minimized(
+                    display_config,
+                    &self.character_name,
+                    self.dimensions,
+                    font_renderer,
+                )?;
             }
             _ => match &self.preview_mode {
                 crate::types::PreviewMode::Live => {
@@ -319,7 +342,12 @@ impl<'a> Thumbnail<'a> {
 
         // Force update of name (and implicit repaint if visible)
         self.renderer
-            .update_name(display_config, &self.character_name, self.dimensions, font_renderer)
+            .update_name(
+                display_config,
+                &self.character_name,
+                self.dimensions,
+                font_renderer,
+            )
             .context(format!(
                 "Failed to update name overlay to '{}'",
                 self.character_name

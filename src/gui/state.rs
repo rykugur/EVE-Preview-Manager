@@ -69,7 +69,6 @@ pub struct SharedState {
     pub settings_changed: bool,
     pub selected_profile_idx: usize,
     pub should_quit: bool,
-    pub last_config_mtime: Option<std::time::SystemTime>,
 
     // IPC
     pub ipc_config_tx: Option<IpcSender<ConfigMessage>>,
@@ -99,9 +98,7 @@ impl SharedState {
             settings_changed: false,
             selected_profile_idx,
             should_quit: false,
-            last_config_mtime: std::fs::metadata(Config::path())
-                .ok()
-                .and_then(|m| m.modified().ok()),
+
             ipc_config_tx: None,
             ipc_status_rx: None,
             bootstrap_rx: None,
@@ -337,7 +334,7 @@ impl SharedState {
             let rules = &selected_profile.custom_windows;
             // keys to move
             let mut move_keys = Vec::new();
-            for (key, _) in &character_thumbnails {
+            for key in character_thumbnails.keys() {
                 if rules.iter().any(|r| r.alias == *key) {
                     move_keys.push(key.clone());
                 }
@@ -429,30 +426,6 @@ impl SharedState {
         info!("Configuration changes discarded");
     }
 
-    pub fn reload_character_list(&mut self) {
-        // Load fresh config from disk to get daemon's new characters
-        if let Ok(disk_config) = Config::load() {
-            // Merge new characters from disk into GUI config without losing GUI changes
-            for (profile_idx, gui_profile) in self.config.profiles.iter_mut().enumerate() {
-                if let Some(disk_profile) = disk_config.profiles.get(profile_idx)
-                    && disk_profile.profile_name == gui_profile.profile_name
-                {
-                    // Add any new characters from disk that GUI doesn't know about
-                    for (char_name, char_settings) in &disk_profile.character_thumbnails {
-                        if !gui_profile.character_thumbnails.contains_key(char_name)
-                            && !char_name.is_empty()
-                        {
-                            gui_profile
-                                .character_thumbnails
-                                .insert(char_name.clone(), char_settings.clone());
-                            info!(character = %char_name, profile = %gui_profile.profile_name, "Detected new character from daemon");
-                        }
-                    }
-                }
-            }
-        }
-    }
-
     pub fn save_thumbnail_positions(&mut self) -> Result<()> {
         // With IPC, positions are automatically updated in memory via DaemonMessage::PositionChanged
         // and conditionally auto-saved.
@@ -469,44 +442,39 @@ impl SharedState {
 
     pub fn poll_daemon(&mut self) {
         // 1. Check for Bootstrap handshake
-        if let Some(ref rx) = self.bootstrap_rx {
-            if let Ok(msg) = rx.try_recv() {
-                info!("Received IPC channels from daemon");
-                let (config_tx, status_rx) = msg;
-                self.ipc_config_tx = Some(config_tx);
+        if let Some(ref rx) = self.bootstrap_rx
+            && let Ok(msg) = rx.try_recv()
+        {
+            info!("Received IPC channels from daemon");
+            let (config_tx, status_rx) = msg;
+            self.ipc_config_tx = Some(config_tx);
 
-                // Bridge status_rx to GUI thread
-                let (gui_tx, gui_rx) = mpsc::channel();
-                self.gui_status_rx = Some(gui_rx);
+            // Bridge status_rx to GUI thread
+            let (gui_tx, gui_rx) = mpsc::channel();
+            self.gui_status_rx = Some(gui_rx);
 
-                std::thread::spawn(move || {
-                    loop {
-                        match status_rx.recv() {
-                            Ok(msg) => {
-                                if let Err(_) = gui_tx.send(msg) {
-                                    break; // GUI dropped
-                                }
-                            }
-                            Err(_) => break, // Daemon closed
-                        }
+            std::thread::spawn(move || {
+                while let Ok(msg) = status_rx.recv() {
+                    if gui_tx.send(msg).is_err() {
+                        break; // GUI dropped
                     }
-                });
+                }
+            });
 
-                // Send Initial Config
-                // Trigger a save_config (virtual) or just send logic?
-                // We can just call save_config() to ensure we sync everything?
-                // Or just extract and send.
-                // Calling save_config() writes to disk which is unnecessary.
-                // Let's invoke the sending logic directly or factor it out.
-                // For now, I'll copy the sending logic/invoke restart logic?
-                // Ideally `start_daemon` triggers logic.
+            // Send Initial Config
+            // Trigger a save_config (virtual) or just send logic?
+            // We can just call save_config() to ensure we sync everything?
+            // Or just extract and send.
+            // Calling save_config() writes to disk which is unnecessary.
+            // Let's invoke the sending logic directly or factor it out.
+            // For now, I'll copy the sending logic/invoke restart logic?
+            // Ideally `start_daemon` triggers logic.
 
-                // HACK: Just trigger a save, it's cheap enough and ensures sync.
-                let _ = self.save_config();
+            // HACK: Just trigger a save, it's cheap enough and ensures sync.
+            let _ = self.save_config();
 
-                self.bootstrap_rx = None; // Done
-                self.daemon_status = DaemonStatus::Running;
-            }
+            self.bootstrap_rx = None; // Done
+            self.daemon_status = DaemonStatus::Running;
         }
 
         // 2. Poll Status Messages

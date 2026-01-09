@@ -68,15 +68,10 @@ pub enum HotkeyBackendType {
 pub enum SaveStrategy {
     /// Load existing config from disk and preserve its character positions/dimensions
     /// Used by GUI when saving general settings to avoid overwriting daemon's position updates
-    /// Load existing config from disk and preserve its character positions/dimensions
-    /// Used by GUI when saving general settings to avoid overwriting daemon's position updates
     Preserve,
     /// Overwrite disk config cleanly with current state
     /// Used when we know we have the full authoritative state
     Overwrite,
-    /// Load existing config from disk and updated ONLY character positions/dimensions from current state
-    /// Used by Daemon to save position updates without stomping GUI settings (like overrides)
-    Merge,
 }
 
 /// Top-level configuration with profile support
@@ -637,75 +632,6 @@ impl Config {
                 clone
             }
             SaveStrategy::Overwrite => self.clone(),
-            SaveStrategy::Merge => {
-                let merged = self.clone();
-                if config_path.exists()
-                    && let Ok(contents) = fs::read_to_string(&config_path)
-                    && let Ok(mut existing_config) = serde_json::from_str::<Config>(&contents)
-                {
-                    // Goal: Update existing_config with positions from 'self' (daemon),
-                    // but keep everything else from 'existing_config' (GUI).
-
-                    // Iterate over daemon's profiles (self)
-                    for daemon_profile in merged.profiles.iter() {
-                        if let Some(disk_profile) = existing_config
-                            .profiles
-                            .iter_mut()
-                            .find(|p| p.profile_name == daemon_profile.profile_name)
-                        {
-                            // Update positions for each character
-                            for (char_name, daemon_char_settings) in
-                                &daemon_profile.character_thumbnails
-                            {
-                                // Get or insert character entry in disk profile
-                                let disk_char_settings = disk_profile
-                                    .character_thumbnails
-                                    .entry(char_name.clone())
-                                    .or_insert_with(|| daemon_char_settings.clone());
-
-                                // STRICTLY update only position and dimensions
-                                disk_char_settings.x = daemon_char_settings.x;
-                                disk_char_settings.y = daemon_char_settings.y;
-                                disk_char_settings.dimensions = daemon_char_settings.dimensions;
-
-                                // Intentionally NOT updating overrides or other fields
-                                // disk_char_settings.override_* fields remain as they are on disk
-                            }
-
-                            // Update positions for each custom source
-                            for (source_name, daemon_source_settings) in
-                                &daemon_profile.custom_source_thumbnails
-                            {
-                                let disk_source_settings = disk_profile
-                                    .custom_source_thumbnails
-                                    .entry(source_name.clone())
-                                    .or_insert_with(|| daemon_source_settings.clone());
-
-                                disk_source_settings.x = daemon_source_settings.x;
-                                disk_source_settings.y = daemon_source_settings.y;
-                                disk_source_settings.dimensions = daemon_source_settings.dimensions;
-                            }
-
-                            // CLEANUP: Ensure character_thumbnails does not contain any keys that match
-                            // custom_windows aliases. This fixes the persistence bug where legacy
-                            // entries in the file were being preserved by the merge strategy.
-                            let custom_aliases: Vec<String> = disk_profile
-                                .custom_windows
-                                .iter()
-                                .map(|w| w.alias.clone())
-                                .collect();
-
-                            disk_profile
-                                .character_thumbnails
-                                .retain(|k, _| !custom_aliases.contains(k));
-                        }
-                    }
-                    existing_config
-                } else {
-                    // Fallback to overwrite if disk read fails (should be rare)
-                    merged
-                }
-            }
         };
 
         let json_string = serde_json::to_string_pretty(&config_to_save)
@@ -729,6 +655,131 @@ impl Default for Config {
         Self {
             global: GlobalSettings::default(),
             profiles: default_profiles(),
+        }
+    }
+}
+
+// Custom implementation to support both Helper (JSON/Human) and Strict/Binary (Bincode/IPC)
+impl<'de> Deserialize<'de> for Profile {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        if deserializer.is_human_readable() {
+            // Use ProfileHelper for JSON migration and flexibility
+            ProfileHelper::deserialize(deserializer).map(Profile::from)
+        } else {
+            // Use strict binary structure for IPC/Bincode (matches Serialize output)
+            #[derive(Deserialize)]
+            struct ProfileBinary {
+                pub profile_name: String,
+                #[serde(default)]
+                pub profile_description: String,
+                #[serde(default = "default_thumbnail_width")]
+                pub thumbnail_default_width: u16,
+                #[serde(default = "default_thumbnail_height")]
+                pub thumbnail_default_height: u16,
+                #[serde(default = "default_thumbnail_enabled")]
+                pub thumbnail_enabled: bool,
+                pub thumbnail_opacity: u8,
+                #[serde(default = "default_border_enabled", alias = "thumbnail_border")]
+                pub thumbnail_active_border: bool,
+                #[serde(alias = "thumbnail_border_size")]
+                pub thumbnail_active_border_size: u16,
+                #[serde(alias = "thumbnail_border_color")]
+                pub thumbnail_active_border_color: String,
+                #[serde(default = "default_inactive_border_enabled")]
+                pub thumbnail_inactive_border: bool,
+                #[serde(
+                    alias = "thumbnail_inactive_border_size",
+                    default = "default_border_size"
+                )]
+                pub thumbnail_inactive_border_size: u16,
+                #[serde(default = "default_inactive_border_color")]
+                pub thumbnail_inactive_border_color: String,
+                pub thumbnail_text_size: u16,
+                pub thumbnail_text_x: i16,
+                pub thumbnail_text_y: i16,
+                #[serde(default = "default_text_font_family")]
+                pub thumbnail_text_font: String,
+                pub thumbnail_text_color: String,
+                #[serde(default = "default_auto_save_thumbnail_positions")]
+                pub thumbnail_auto_save_position: bool,
+                #[serde(default = "default_snap_threshold")]
+                pub thumbnail_snap_threshold: u16,
+                #[serde(default)]
+                pub thumbnail_hide_not_focused: bool,
+                #[serde(default = "default_preserve_thumbnail_position_on_swap")]
+                pub thumbnail_preserve_position_on_swap: bool,
+                #[serde(default)]
+                pub client_minimize_on_switch: bool,
+                #[serde(default)]
+                pub client_minimize_show_overlay: bool,
+                #[serde(default = "default_hotkey_backend")]
+                pub hotkey_backend: HotkeyBackendType,
+                #[serde(default)]
+                pub hotkey_input_device: Option<String>,
+                #[serde(default)]
+                pub cycle_groups: Vec<CycleGroup>,
+                #[serde(default)]
+                pub hotkey_logged_out_cycle: bool,
+                #[serde(default)]
+                pub hotkey_require_eve_focus: bool,
+                #[serde(default)]
+                pub hotkey_profile_switch: Option<crate::config::HotkeyBinding>,
+                #[serde(default)]
+                pub hotkey_toggle_skip: Option<crate::config::HotkeyBinding>,
+                #[serde(default)]
+                pub hotkey_toggle_previews: Option<crate::config::HotkeyBinding>,
+                #[serde(default)]
+                pub character_hotkeys: HashMap<String, crate::config::HotkeyBinding>,
+                #[serde(default)]
+                pub character_thumbnails: HashMap<String, CharacterSettings>,
+                #[serde(default)]
+                pub custom_source_thumbnails: HashMap<String, CharacterSettings>,
+                #[serde(default)]
+                pub custom_windows: Vec<CustomWindowRule>,
+            }
+
+            let p = ProfileBinary::deserialize(deserializer)?;
+
+            Ok(Profile {
+                profile_name: p.profile_name,
+                profile_description: p.profile_description,
+                thumbnail_default_width: p.thumbnail_default_width,
+                thumbnail_default_height: p.thumbnail_default_height,
+                thumbnail_enabled: p.thumbnail_enabled,
+                thumbnail_opacity: p.thumbnail_opacity,
+                thumbnail_active_border: p.thumbnail_active_border,
+                thumbnail_active_border_size: p.thumbnail_active_border_size,
+                thumbnail_active_border_color: p.thumbnail_active_border_color,
+                thumbnail_inactive_border: p.thumbnail_inactive_border,
+                thumbnail_inactive_border_size: p.thumbnail_inactive_border_size,
+                thumbnail_inactive_border_color: p.thumbnail_inactive_border_color,
+                thumbnail_text_size: p.thumbnail_text_size,
+                thumbnail_text_x: p.thumbnail_text_x,
+                thumbnail_text_y: p.thumbnail_text_y,
+                thumbnail_text_font: p.thumbnail_text_font,
+                thumbnail_text_color: p.thumbnail_text_color,
+                thumbnail_auto_save_position: p.thumbnail_auto_save_position,
+                thumbnail_snap_threshold: p.thumbnail_snap_threshold,
+                thumbnail_hide_not_focused: p.thumbnail_hide_not_focused,
+                thumbnail_preserve_position_on_swap: p.thumbnail_preserve_position_on_swap,
+                client_minimize_on_switch: p.client_minimize_on_switch,
+                client_minimize_show_overlay: p.client_minimize_show_overlay,
+                hotkey_backend: p.hotkey_backend,
+                hotkey_input_device: p.hotkey_input_device,
+                cycle_groups: p.cycle_groups,
+                hotkey_logged_out_cycle: p.hotkey_logged_out_cycle,
+                hotkey_require_eve_focus: p.hotkey_require_eve_focus,
+                hotkey_profile_switch: p.hotkey_profile_switch,
+                hotkey_toggle_skip: p.hotkey_toggle_skip,
+                hotkey_toggle_previews: p.hotkey_toggle_previews,
+                character_hotkeys: p.character_hotkeys,
+                character_thumbnails: p.character_thumbnails,
+                custom_source_thumbnails: p.custom_source_thumbnails,
+                custom_windows: p.custom_windows,
+            })
         }
     }
 }
@@ -947,130 +998,5 @@ mod tests {
         assert_eq!(group.characters, vec!["A", "B"]);
         assert!(group.hotkey_forward.is_some());
         assert!(group.hotkey_backward.is_some());
-    }
-}
-
-// Custom implementation to support both Helper (JSON/Human) and Strict/Binary (Bincode/IPC)
-impl<'de> Deserialize<'de> for Profile {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        if deserializer.is_human_readable() {
-             // Use ProfileHelper for JSON migration and flexibility
-             ProfileHelper::deserialize(deserializer).map(Profile::from)
-        } else {
-             // Use strict binary structure for IPC/Bincode (matches Serialize output)
-             #[derive(Deserialize)]
-             struct ProfileBinary {
-                pub profile_name: String,
-                #[serde(default)]
-                pub profile_description: String,
-                #[serde(default = "default_thumbnail_width")]
-                pub thumbnail_default_width: u16,
-                #[serde(default = "default_thumbnail_height")]
-                pub thumbnail_default_height: u16,
-                #[serde(default = "default_thumbnail_enabled")]
-                pub thumbnail_enabled: bool,
-                pub thumbnail_opacity: u8,
-                #[serde(default = "default_border_enabled", alias = "thumbnail_border")]
-                pub thumbnail_active_border: bool,
-                #[serde(alias = "thumbnail_border_size")]
-                pub thumbnail_active_border_size: u16,
-                #[serde(alias = "thumbnail_border_color")]
-                pub thumbnail_active_border_color: String,
-                #[serde(default = "default_inactive_border_enabled")]
-                pub thumbnail_inactive_border: bool,
-                #[serde(
-                    alias = "thumbnail_inactive_border_size",
-                    default = "default_border_size"
-                )]
-                pub thumbnail_inactive_border_size: u16,
-                #[serde(default = "default_inactive_border_color")]
-                pub thumbnail_inactive_border_color: String,
-                pub thumbnail_text_size: u16,
-                pub thumbnail_text_x: i16,
-                pub thumbnail_text_y: i16,
-                #[serde(default = "default_text_font_family")]
-                pub thumbnail_text_font: String,
-                pub thumbnail_text_color: String,
-                #[serde(default = "default_auto_save_thumbnail_positions")]
-                pub thumbnail_auto_save_position: bool,
-                #[serde(default = "default_snap_threshold")]
-                pub thumbnail_snap_threshold: u16,
-                #[serde(default)]
-                pub thumbnail_hide_not_focused: bool,
-                #[serde(default = "default_preserve_thumbnail_position_on_swap")]
-                pub thumbnail_preserve_position_on_swap: bool,
-                #[serde(default)]
-                pub client_minimize_on_switch: bool,
-                #[serde(default)]
-                pub client_minimize_show_overlay: bool,
-                #[serde(default = "default_hotkey_backend")]
-                pub hotkey_backend: HotkeyBackendType,
-                #[serde(default)]
-                pub hotkey_input_device: Option<String>,
-                #[serde(default)]
-                pub cycle_groups: Vec<CycleGroup>,
-                #[serde(default)]
-                pub hotkey_logged_out_cycle: bool,
-                #[serde(default)]
-                pub hotkey_require_eve_focus: bool,
-                #[serde(default)]
-                pub hotkey_profile_switch: Option<crate::config::HotkeyBinding>,
-                #[serde(default)]
-                pub hotkey_toggle_skip: Option<crate::config::HotkeyBinding>,
-                #[serde(default)]
-                pub hotkey_toggle_previews: Option<crate::config::HotkeyBinding>,
-                #[serde(default)]
-                pub character_hotkeys: HashMap<String, crate::config::HotkeyBinding>,
-                #[serde(default)]
-                pub character_thumbnails: HashMap<String, CharacterSettings>,
-                #[serde(default)]
-                pub custom_source_thumbnails: HashMap<String, CharacterSettings>,
-                #[serde(default)]
-                pub custom_windows: Vec<CustomWindowRule>,
-             }
-
-             let p = ProfileBinary::deserialize(deserializer)?;
-             
-             Ok(Profile {
-                profile_name: p.profile_name,
-                profile_description: p.profile_description,
-                thumbnail_default_width: p.thumbnail_default_width,
-                thumbnail_default_height: p.thumbnail_default_height,
-                thumbnail_enabled: p.thumbnail_enabled,
-                thumbnail_opacity: p.thumbnail_opacity,
-                thumbnail_active_border: p.thumbnail_active_border,
-                thumbnail_active_border_size: p.thumbnail_active_border_size,
-                thumbnail_active_border_color: p.thumbnail_active_border_color,
-                thumbnail_inactive_border: p.thumbnail_inactive_border,
-                thumbnail_inactive_border_size: p.thumbnail_inactive_border_size,
-                thumbnail_inactive_border_color: p.thumbnail_inactive_border_color,
-                thumbnail_text_size: p.thumbnail_text_size,
-                thumbnail_text_x: p.thumbnail_text_x,
-                thumbnail_text_y: p.thumbnail_text_y,
-                thumbnail_text_font: p.thumbnail_text_font,
-                thumbnail_text_color: p.thumbnail_text_color,
-                thumbnail_auto_save_position: p.thumbnail_auto_save_position,
-                thumbnail_snap_threshold: p.thumbnail_snap_threshold,
-                thumbnail_hide_not_focused: p.thumbnail_hide_not_focused,
-                thumbnail_preserve_position_on_swap: p.thumbnail_preserve_position_on_swap,
-                client_minimize_on_switch: p.client_minimize_on_switch,
-                client_minimize_show_overlay: p.client_minimize_show_overlay,
-                hotkey_backend: p.hotkey_backend,
-                hotkey_input_device: p.hotkey_input_device,
-                cycle_groups: p.cycle_groups,
-                hotkey_logged_out_cycle: p.hotkey_logged_out_cycle,
-                hotkey_require_eve_focus: p.hotkey_require_eve_focus,
-                hotkey_profile_switch: p.hotkey_profile_switch,
-                hotkey_toggle_skip: p.hotkey_toggle_skip,
-                hotkey_toggle_previews: p.hotkey_toggle_previews,
-                character_hotkeys: p.character_hotkeys,
-                character_thumbnails: p.character_thumbnails,
-                custom_source_thumbnails: p.custom_source_thumbnails,
-                custom_windows: p.custom_windows,
-             })
-        }
     }
 }

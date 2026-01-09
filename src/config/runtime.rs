@@ -5,8 +5,7 @@
 
 use anyhow::Result;
 use std::collections::HashMap;
-use std::fs;
-use std::path::PathBuf;
+
 use tracing::{error, info};
 use x11rb::protocol::render::Color;
 
@@ -49,17 +48,6 @@ pub struct DaemonConfig {
 }
 
 impl DaemonConfig {
-    fn config_path() -> PathBuf {
-        #[cfg(not(test))]
-        let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
-        #[cfg(test)]
-        let mut path = std::env::temp_dir().join("eve-preview-manager-test");
-
-        path.push(crate::constants::config::APP_DIR);
-        path.push(crate::constants::config::FILENAME);
-        path
-    }
-
     /// Get default thumbnail dimensions from profile settings
     pub fn default_thumbnail_size(&self, _screen_width: u16, _screen_height: u16) -> (u16, u16) {
         (
@@ -120,60 +108,6 @@ impl DaemonConfig {
         }
     }
 
-    pub fn load() -> Self {
-        let config_path = Self::config_path();
-        if let Ok(contents) = fs::read_to_string(&config_path) {
-            match serde_json::from_str::<crate::config::profile::Config>(&contents) {
-                Ok(profile_config) => {
-                    info!("Loading daemon config from profile-based format");
-                    return Self::from_profile_config(profile_config);
-                }
-                Err(e) => {
-                    error!(path = %config_path.display(), error = %e, "Failed to parse config file");
-                    error!(path = %config_path.display(), "Please fix the syntax errors in your config file.");
-                    std::process::exit(1);
-                }
-            }
-        }
-
-        error!(path = %config_path.display(), "No config file found. Please run the GUI manager first to create a profile.");
-        error!("Run: eve-preview-manager");
-        std::process::exit(1);
-    }
-
-    fn from_profile_config(config: crate::config::profile::Config) -> Self {
-        let profile = config
-            .profiles
-            .iter()
-            .find(|p| p.profile_name == config.global.selected_profile)
-            .or_else(|| config.profiles.first())
-            .expect("Config must have at least one profile")
-            .clone();
-
-        info!(profile = %profile.profile_name, "Using profile for daemon settings");
-
-        // aggregated map of hotkeys -> profile names
-        let mut profile_hotkeys = HashMap::new();
-        for p in &config.profiles {
-            if let Some(binding) = &p.hotkey_profile_switch {
-                profile_hotkeys.insert(binding.clone(), p.profile_name.clone());
-            }
-        }
-
-        DaemonConfig {
-            profile: profile.clone(),
-            character_thumbnails: profile.character_thumbnails.clone(),
-            custom_source_thumbnails: profile.custom_source_thumbnails.clone(),
-            profile_hotkeys,
-            runtime_hidden: false,
-        }
-    }
-
-    /// Load config with screen size available (for future smart defaults)
-    pub fn load_with_screen(_screen_width: u16, _screen_height: u16) -> Self {
-        Self::load()
-    }
-
     /// Handle character name change (login/logout)
     /// Returns new position if the new character has a saved position
     pub fn handle_character_change(
@@ -211,35 +145,34 @@ impl DaemonConfig {
 
         // NOTE: Refresh overrides from disk to respect external GUI changes (e.g. static mode).
         // Memory holds the authoritative window position, but disk holds the authoritative user config.
-        if !new_name.is_empty() {
-            if let Ok(disk_config) = crate::config::profile::Config::load() {
-                let pd_name = &self.profile.profile_name;
-                if let Some(disk_profile) = disk_config
-                    .profiles
-                    .iter()
-                    .find(|p| &p.profile_name == pd_name)
-                {
-                    if let Some(disk_settings) = disk_profile.character_thumbnails.get(new_name) {
-                        self.character_thumbnails
-                            .entry(new_name.to_string())
-                            .and_modify(|mem_settings| {
-                                mem_settings.preview_mode = disk_settings.preview_mode.clone();
-                                mem_settings.alias = disk_settings.alias.clone();
-                                mem_settings.notes = disk_settings.notes.clone();
-                                mem_settings.override_active_border_color =
-                                    disk_settings.override_active_border_color.clone();
-                                mem_settings.override_inactive_border_color =
-                                    disk_settings.override_inactive_border_color.clone();
-                                mem_settings.override_active_border_size =
-                                    disk_settings.override_active_border_size;
-                                mem_settings.override_inactive_border_size =
-                                    disk_settings.override_inactive_border_size;
-                                mem_settings.override_text_color =
-                                    disk_settings.override_text_color.clone();
-                            })
-                            .or_insert_with(|| disk_settings.clone());
-                    }
-                }
+        if !new_name.is_empty()
+            && let Ok(disk_config) = crate::config::profile::Config::load()
+        {
+            let pd_name = &self.profile.profile_name;
+            if let Some(disk_profile) = disk_config
+                .profiles
+                .iter()
+                .find(|p| &p.profile_name == pd_name)
+                && let Some(disk_settings) = disk_profile.character_thumbnails.get(new_name)
+            {
+                self.character_thumbnails
+                    .entry(new_name.to_string())
+                    .and_modify(|mem_settings| {
+                        mem_settings.preview_mode = disk_settings.preview_mode.clone();
+                        mem_settings.alias = disk_settings.alias.clone();
+                        mem_settings.notes = disk_settings.notes.clone();
+                        mem_settings.override_active_border_color =
+                            disk_settings.override_active_border_color.clone();
+                        mem_settings.override_inactive_border_color =
+                            disk_settings.override_inactive_border_color.clone();
+                        mem_settings.override_active_border_size =
+                            disk_settings.override_active_border_size;
+                        mem_settings.override_inactive_border_size =
+                            disk_settings.override_inactive_border_size;
+                        mem_settings.override_text_color =
+                            disk_settings.override_text_color.clone();
+                    })
+                    .or_insert_with(|| disk_settings.clone());
             }
         }
 

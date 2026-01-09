@@ -11,8 +11,6 @@ mod types;
 
 mod x11;
 
-
-
 use anyhow::Result;
 use clap::Parser;
 use tracing::Level as TraceLevel;
