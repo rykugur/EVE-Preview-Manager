@@ -5,18 +5,14 @@ use x11rb::protocol::render::{ConnectionExt as RenderExt, Fixed, Pictformat};
 use x11rb::protocol::xproto::*;
 use x11rb::rust_connection::RustConnection;
 
-use crate::config::DisplayConfig;
 use crate::constants::{fixed_point, x11};
-use crate::preview::font::FontRenderer;
 
 /// Application context holding immutable shared state
 pub struct AppContext<'a> {
     pub conn: &'a RustConnection,
     pub screen: &'a Screen,
-    pub config: &'a DisplayConfig,
     pub atoms: &'a CachedAtoms,
     pub formats: &'a CachedFormats,
-    pub font_renderer: &'a FontRenderer,
 }
 
 /// Pre-cached X11 atoms to avoid repeated roundtrips

@@ -5,9 +5,13 @@ mod config;
 mod constants;
 mod gui;
 mod input;
+mod ipc;
 mod preview;
 mod types;
+
 mod x11;
+
+
 
 use anyhow::Result;
 use clap::Parser;
@@ -22,6 +26,10 @@ struct Cli {
     /// Run in preview daemon mode (background process showing thumbnails)
     #[arg(long)]
     preview: bool,
+
+    /// Name of the IPC server to connect to for configuration and status updates
+    #[arg(long)]
+    ipc_server: Option<String>,
 }
 
 fn main() -> Result<()> {
@@ -41,7 +49,14 @@ fn main() -> Result<()> {
             .build()
             .expect("Failed to build Tokio runtime");
 
-        rt.block_on(async { preview::run_preview_daemon().await })
+        rt.block_on(async {
+            if let Some(server_name) = cli.ipc_server {
+                preview::run_preview_daemon(server_name).await
+            } else {
+                eprintln!("Error: --ipc-server is required for preview daemon mode");
+                std::process::exit(1);
+            }
+        })
     } else {
         // Default mode: launch the configuration GUI which manages the daemon lifecycle
         gui::run_gui()

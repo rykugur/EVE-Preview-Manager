@@ -13,7 +13,9 @@ use x11rb::protocol::xproto::*;
 use crate::config::DaemonConfig;
 use crate::constants::eve;
 use crate::input::listener::{self, CycleCommand, TimestampedCommand};
+use crate::ipc::{BootstrapMessage, ConfigMessage, DaemonMessage};
 use crate::x11::{AppContext, CachedAtoms, activate_window, minimize_window};
+use ipc_channel::ipc::{self, IpcReceiver, IpcSender};
 
 use super::cycle_state::CycleState;
 use super::event_handler::{EventContext, handle_event};
@@ -85,8 +87,9 @@ fn initialize_x11() -> Result<(
     Ok((conn, screen_num, atoms, formats))
 }
 
-fn load_configuration(
-    screen: &Screen,
+fn initialize_state(
+    _screen: &Screen,
+    daemon_config: DaemonConfig,
 ) -> Result<(
     DaemonConfig,
     crate::config::DisplayConfig,
@@ -94,8 +97,8 @@ fn load_configuration(
     CycleState,
 )> {
     // Load config with screen-aware defaults
-    let daemon_config =
-        DaemonConfig::load_with_screen(screen.width_in_pixels, screen.height_in_pixels);
+    // let daemon_config =
+    //    DaemonConfig::load_with_screen(screen.width_in_pixels, screen.height_in_pixels);
     let config = daemon_config.build_display_config();
     info!("Loaded display configuration");
 
@@ -271,53 +274,137 @@ fn setup_hotkeys(daemon_config: &DaemonConfig) -> HotkeyResources {
 }
 
 async fn run_event_loop(
-    ctx: AppContext<'_>,
+    conn: &RustConnection,
+    screen: &Screen,
+    mut display_config: crate::config::DisplayConfig,
+    atoms: &CachedAtoms,
+    formats: &crate::x11::CachedFormats,
+    mut font_renderer: crate::preview::font::FontRenderer,
     mut resources: DaemonResources<'_>,
     mut hotkey_rx: mpsc::Receiver<TimestampedCommand>,
     hotkey_groups: HashMap<crate::config::HotkeyBinding, Vec<String>>,
     mut sigusr1: tokio::signal::unix::Signal,
+    config_rx: IpcReceiver<ConfigMessage>,
+    status_tx: IpcSender<DaemonMessage>,
 ) -> Result<()> {
     info!("Preview daemon running (async)");
 
+    // Wrap IPC receiver in something async-friendly?
+    // IpcReceiver is blocking. IPC-channel doesn't support async recv out of the box in a way that integrates with tokio::select! easily without a bridge.
+    // We should spawn a thread to bridge IPC messages to a tokio channel.
+    let (ipc_config_tx, mut ipc_config_rx_tokio) = mpsc::channel(1);
+
+    std::thread::spawn(move || {
+        loop {
+            match config_rx.recv() {
+                Ok(msg) => {
+                    if let Err(_) = ipc_config_tx.blocking_send(msg) {
+                        break; // Channel closed
+                    }
+                }
+                Err(_) => break, // IPC closed
+            }
+        }
+    });
+
     // Wrap X11 connection in AsyncFd for async polling
     // This allows us to wake up exactly when X11 has data, without busy polling
-    let x11_fd = AsyncFd::new(ctx.conn.stream().as_raw_fd())
+    let x11_fd = AsyncFd::new(conn.stream().as_raw_fd())
         .context("Failed to create AsyncFd for X11 connection")?;
 
     loop {
-        // Process all pending X11 events without blocking to ensure the queue is drained
-        // This prevents the event channel from filling up during heavy activity
-        while let Some(event) = ctx
-            .conn
-            .poll_for_event()
-            .context("Failed to poll for X11 event")?
+        // Scope ctx to allow mutable borrow of font_renderer later
         {
-            // Scope the mutable borrows for event handling
-            {
-                let mut context = EventContext {
-                    app_ctx: &ctx,
-                    daemon_config: &mut resources.config,
-                    eve_clients: &mut resources.eve_clients,
-                    session_state: &mut resources.session,
-                    cycle_state: &mut resources.cycle,
-                };
+            // Construct AppContext for this iteration
+            let ctx = AppContext {
+                conn,
+                screen,
+                atoms,
+                formats,
+            };
 
-                let _ = handle_event(&mut context, event)
-                    .inspect_err(|err| error!(error = ?err, "Event handling error"));
+            // Process all pending X11 events without blocking to ensure the queue is drained
+            // This prevents the event channel from filling up during heavy activity
+            while let Some(event) = ctx
+                .conn
+                .poll_for_event()
+                .context("Failed to poll for X11 event")?
+            {
+                // Scope the mutable borrows for event handling
+                {
+                    let mut context = EventContext {
+                        app_ctx: &ctx,
+                        daemon_config: &mut resources.config,
+                        eve_clients: &mut resources.eve_clients,
+                        session_state: &mut resources.session,
+                        cycle_state: &mut resources.cycle,
+
+                        status_tx: &status_tx,
+                        font_renderer: &font_renderer,
+                        display_config: &display_config,
+                    };
+
+                    let _ = handle_event(&mut context, event)
+                        .inspect_err(|err| error!(error = ?err, "Event handling error"));
+                }
             }
+
+            // Flush any pending requests to X server
+            let _ = ctx.conn.flush();
         }
 
-        // Flush any pending requests to X server
-        let _ = ctx.conn.flush();
-
         tokio::select! {
-             // 1. Handle SIGUSR1 (Manual Save)
+             // 1. Handle SIGUSR1 (Log status instead of save)
             _ = sigusr1.recv() => {
-                info!("Manual save requested via SIGUSR1");
-                if let Err(e) = resources.config.save() {
-                    error!(error = ?e, "Failed to save positions after SIGUSR1");
-                } else {
-                    info!("Positions saved successfully");
+                info!("SIGUSR1 received - config is now managed by GUI via IPC");
+                // TODO: Maybe send a status update to GUI?
+                let _ = status_tx.send(DaemonMessage::Log {
+                    level: "INFO".to_string(),
+                    message: "SIGUSR1 received".to_string()
+                });
+            }
+
+            // 2. Handle IPC Config Updates
+            Some(msg) = ipc_config_rx_tokio.recv() => {
+                match msg {
+                    ConfigMessage::Update(new_config) => {
+                        info!("Received config update via IPC");
+
+                        // Update DaemonConfig
+                        resources.config = new_config;
+
+                        // Rebuild DisplayConfig to apply visual settings live
+                        display_config = resources.config.build_display_config();
+
+                        // Rebuild font renderer if font settings changed (optimization: check if changed first)
+                        // For now we just rebuild it.
+                         let new_renderer = crate::preview::font::FontRenderer::resolve_from_config(
+                            conn,
+                            &resources.config.profile.thumbnail_text_font,
+                            resources.config.profile.thumbnail_text_size as f32,
+                        );
+
+                        match new_renderer {
+                            Ok(renderer) => {
+                                font_renderer = renderer;
+                                info!("Font renderer updated");
+                            }
+                            Err(e) => {
+                                error!(error = %e, "Failed to update font renderer");
+                            }
+                        }
+
+                        // Update CycleState (hotkeys)
+                        resources.cycle = CycleState::new(resources.config.profile.cycle_groups.clone());
+
+                        // Force redraw of all thumbnails with new settings
+                        display_config = resources.config.build_display_config();
+                        for thumbnail in resources.eve_clients.values_mut() {
+                             let _ = thumbnail.update(&display_config, &font_renderer);
+                        }
+
+                        info!("Config updated live");
+                    }
                 }
             }
 
@@ -326,6 +413,15 @@ async fn run_event_loop(
             // 2. Handle Hotkey Commands
             Some(msg) = hotkey_rx.recv() => {
                  let TimestampedCommand { command, timestamp } = msg;
+
+                 // Reconstruct AppContext for hotkey handling (read-only borrow)
+                let ctx = AppContext {
+                    conn,
+                    screen,
+
+                    atoms,
+                    formats,
+                };
 
                  // Check if we should only allow hotkeys when EVE window is focused
                 let should_process = if resources.config.profile.hotkey_require_eve_focus {
@@ -430,9 +526,9 @@ async fn run_event_loop(
                                     info!(character = %char_name, skipped = is_skipped, "Toggled skip status");
 
                                     // Force redraw of border to show/hide indicator
-                                    // Use current focused state from thumbnail (should be true if active)
                                     let focused = thumbnail.state.is_focused();
-                                    if let Err(e) = thumbnail.border(focused, is_skipped) {
+                                    let display_config = resources.config.build_display_config();
+                                    if let Err(e) = thumbnail.border(&display_config, focused, is_skipped, &font_renderer) {
                                          warn!(character = %char_name, error = %e, "Failed to update border after toggle skip");
                                     }
                                 } else {
@@ -463,7 +559,8 @@ async fn run_event_loop(
                                  } else {
                                      // Force update to ensure content is drawn if revealed
                                      if !resources.config.runtime_hidden {
-                                         let _ = thumbnail.update();
+                                         let display_config = resources.config.build_display_config();
+                                         let _ = thumbnail.update(&display_config, &font_renderer);
                                      }
                                  }
                              }
@@ -532,7 +629,7 @@ async fn run_event_loop(
     }
 }
 
-pub async fn run_preview_daemon() -> Result<()> {
+pub async fn run_preview_daemon(ipc_server_name: String) -> Result<()> {
     // 1. Initialize X11 connection and resources
     let (conn, _screen_num, atoms, formats) =
         initialize_x11().context("Failed to initialize X11")?;
@@ -540,9 +637,31 @@ pub async fn run_preview_daemon() -> Result<()> {
     // Re-acquire screen reference from connection (x11rb::connect returns screen index)
     let screen = &conn.setup().roots[_screen_num];
 
-    // 2. Load Configuration and State
+    // 2. Setup IPC and get initial config
+    info!("Connecting to IPC server: {}", ipc_server_name);
+    let bootstrap_sender: IpcSender<BootstrapMessage> =
+        IpcSender::connect(ipc_server_name).context("Failed to connect to IPC server")?;
+
+    let (config_tx, config_rx) =
+        ipc::channel::<ConfigMessage>().context("Failed to create config IPC channel")?;
+    let (status_tx, status_rx) =
+        ipc::channel::<DaemonMessage>().context("Failed to create status IPC channel")?;
+
+    // Send the channels to the GUI
+    bootstrap_sender
+        .send((config_tx, status_rx))
+        .context("Failed to send bootstrap message")?;
+
+    info!("Waiting for initial configuration...");
+    let initial_config = match config_rx.recv() {
+        Ok(ConfigMessage::Update(config)) => config,
+        Err(e) => return Err(anyhow::anyhow!("Failed to receive initial config: {}", e)),
+    };
+    info!("Received initial configuration");
+
+    // 3. Initialize State from Config
     let (mut daemon_config, config, mut session_state, mut cycle_state) =
-        load_configuration(screen).context("Failed to load configuration")?;
+        initialize_state(screen, initial_config).context("Failed to initialize state")?;
 
     // 3. Setup Signal Handlers
     // We do this here as it requires async runtime context
@@ -569,20 +688,21 @@ pub async fn run_preview_daemon() -> Result<()> {
         "Font renderer initialized"
     );
 
-    // 6. Build AppContext
-    let ctx = AppContext {
-        conn: &conn,
-        screen,
-        config: &config,
-        atoms: &atoms,
-        formats: &formats,
-        font_renderer: &font_renderer,
-    };
+    // 6. Build AppContext & 7. Initial Window Scan
+    // We scope this so ctx (borrowing font_renderer) is dropped before we move font_renderer
+    let mut eve_clients;
+    {
+        let ctx = AppContext {
+            conn: &conn,
+            screen,
+            atoms: &atoms,
+            formats: &formats,
+        };
 
-    // 7. Initial Window Scan
-    let mut eve_clients =
-        super::window_detection::scan_eve_windows(&ctx, &mut daemon_config, &mut session_state)
-            .context("Failed to get initial list of EVE windows")?;
+        eve_clients =
+            super::window_detection::scan_eve_windows(&ctx, &config, &font_renderer, &mut daemon_config, &mut session_state)
+                .context("Failed to get initial list of EVE windows")?;
+    }
 
     // Register initial windows with cycle state
     if config.enabled {
@@ -610,8 +730,10 @@ pub async fn run_preview_daemon() -> Result<()> {
             focused: is_focused,
         };
         if let Err(e) = thumbnail.border(
+            &config,
             is_focused,
             cycle_state.is_skipped(&thumbnail.character_name),
+            &font_renderer,
         ) {
             // Log warning but continue
             tracing::warn!(
@@ -631,5 +753,19 @@ pub async fn run_preview_daemon() -> Result<()> {
         eve_clients,
     };
 
-    run_event_loop(ctx, resources, hotkeys.rx, hotkeys.groups, sigusr1).await
+    run_event_loop(
+        &conn,
+        screen,
+        config.clone(),
+        &atoms,
+        &formats,
+        font_renderer,
+        resources,
+        hotkeys.rx,
+        hotkeys.groups,
+        sigusr1,
+        config_rx,
+        status_tx,
+    )
+    .await
 }

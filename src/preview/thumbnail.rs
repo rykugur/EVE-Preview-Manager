@@ -11,6 +11,7 @@ use x11rb::protocol::xproto::{ConnectionExt, Window};
 use crate::constants::positioning;
 use crate::types::{Dimensions, Position, ThumbnailState};
 use crate::x11::AppContext;
+use crate::config::DisplayConfig;
 
 use super::font::FontRenderer;
 use super::renderer::ThumbnailRenderer;
@@ -65,7 +66,8 @@ impl<'a> Thumbnail<'a> {
         ctx: &AppContext<'a>,
         character_name: String,
         src: Window,
-        font_renderer: &'a FontRenderer,
+        display_config: &crate::config::DisplayConfig,
+        font_renderer: &FontRenderer,
         position: Option<Position>,
         dimensions: Dimensions,
         preview_mode: crate::types::PreviewMode,
@@ -112,6 +114,7 @@ impl<'a> Thumbnail<'a> {
             &character_name,
             src,
             src_geom.depth,
+            display_config,
             font_renderer,
             x,
             y,
@@ -187,62 +190,6 @@ impl<'a> Thumbnail<'a> {
         Ok(())
     }
 
-    /// Updates the thumbnail border based on focus state.
-    pub fn border(&self, focused: bool, skipped: bool) -> Result<()> {
-        self.renderer
-            .border(&self.character_name, self.dimensions, focused, skipped)
-    }
-
-    /// Sets the thumbnail to "Minimized" state and renders the localized overlay.
-    pub fn minimized(&mut self) -> Result<()> {
-        self.state = ThumbnailState::Minimized;
-        // Only render if allowed (might be hidden)
-        // If hidden, the rendering will happen next time update() is called after reveal
-        if self.is_visible() {
-            self.renderer
-                .minimized(&self.character_name, self.dimensions)?;
-        }
-        Ok(())
-    }
-
-    /// Triggers a repaint of the thumbnail content and overlay.
-    ///
-    /// Respects the current logical state (`Minimized` vs `Normal`).
-    /// If hidden, does nothing.
-    pub fn update(&self) -> Result<()> {
-        if !self.is_visible() {
-            return Ok(());
-        }
-
-        match self.state {
-            ThumbnailState::Minimized => {
-                self.renderer
-                    .minimized(&self.character_name, self.dimensions)?;
-            }
-            _ => match &self.preview_mode {
-                crate::types::PreviewMode::Live => {
-                    self.renderer
-                        .update(&self.character_name, self.dimensions)?;
-                }
-                crate::types::PreviewMode::Static { color } => {
-                    let color_u32 = crate::gui::utils::parse_hex_color(color)
-                        .map_err(|_| anyhow::anyhow!("Invalid hex color: {}", color))?;
-
-                    let x_color = x11rb::protocol::render::Color {
-                        red: (color_u32.r() as u16) * 257,
-                        green: (color_u32.g() as u16) * 257,
-                        blue: (color_u32.b() as u16) * 257,
-                        alpha: (color_u32.a() as u16) * 257,
-                    };
-
-                    self.renderer
-                        .update_static(&self.character_name, self.dimensions, x_color)?;
-                }
-            },
-        }
-        Ok(())
-    }
-
     /// Requests focus for the source EVE client.
     ///
     /// # Arguments
@@ -281,13 +228,75 @@ impl<'a> Thumbnail<'a> {
         Ok(())
     }
 
+    /// Updates the thumbnail border based on focus state.
+    pub fn border(&self, display_config: &DisplayConfig, focused: bool, skipped: bool, font_renderer: &FontRenderer) -> Result<()> {
+        self.renderer.border(
+            display_config,
+            &self.character_name,
+            self.dimensions,
+            focused,
+            skipped,
+            font_renderer,
+        )
+    }
+
+    /// Sets the thumbnail to "Minimized" state and renders the localized overlay.
+    pub fn minimized(&mut self, display_config: &DisplayConfig, font_renderer: &FontRenderer) -> Result<()> {
+        self.state = ThumbnailState::Minimized;
+        // Only render if allowed (might be hidden)
+        // If hidden, the rendering will happen next time update() is called after reveal
+        if self.is_visible() {
+            self.renderer
+                .minimized(display_config, &self.character_name, self.dimensions, font_renderer)?;
+        }
+        Ok(())
+    }
+
+    /// Triggers a repaint of the thumbnail content and overlay.
+    pub fn update(&self, display_config: &DisplayConfig, font_renderer: &FontRenderer) -> Result<()> {
+        if !self.is_visible() {
+            return Ok(());
+        }
+
+        match self.state {
+            ThumbnailState::Minimized => {
+                self.renderer
+                    .minimized(display_config, &self.character_name, self.dimensions, font_renderer)?;
+            }
+            _ => match &self.preview_mode {
+                crate::types::PreviewMode::Live => {
+                    self.renderer
+                        .update(&self.character_name, self.dimensions)?;
+                }
+                crate::types::PreviewMode::Static { color } => {
+                    // ... color parsing ...
+                    let color_u32 = crate::gui::utils::parse_hex_color(color)
+                        .map_err(|_| anyhow::anyhow!("Invalid hex color: {}", color))?;
+
+                    let x_color = x11rb::protocol::render::Color {
+                        red: (color_u32.r() as u16) * 257,
+                        green: (color_u32.g() as u16) * 257,
+                        blue: (color_u32.b() as u16) * 257,
+                        alpha: (color_u32.a() as u16) * 257,
+                    };
+
+                    self.renderer
+                        .update_static(&self.character_name, self.dimensions, x_color)?;
+                }
+            },
+        }
+        Ok(())
+    }
+
+    // focus, reposition, resize unchanged
+
     /// Called when character name changes (e.g. login detection update).
-    ///
-    /// Updates the internal name, repellers the name overlay, and optionally applies new saved settings.
     pub fn set_character_name(
         &mut self,
         new_name: String,
         new_settings: Option<crate::types::CharacterSettings>,
+        display_config: &DisplayConfig,
+        font_renderer: &FontRenderer,
     ) -> Result<()> {
         self.character_name = new_name;
 
@@ -310,13 +319,13 @@ impl<'a> Thumbnail<'a> {
 
         // Force update of name (and implicit repaint if visible)
         self.renderer
-            .update_name(&self.character_name, self.dimensions)
+            .update_name(display_config, &self.character_name, self.dimensions, font_renderer)
             .context(format!(
                 "Failed to update name overlay to '{}'",
                 self.character_name
             ))?;
 
-        self.update()
+        self.update(display_config, font_renderer)
             .context("Failed to repaint after character change")?;
 
         Ok(())

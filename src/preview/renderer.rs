@@ -21,6 +21,7 @@ use crate::x11::{AppContext, to_fixed};
 
 use super::font::FontRenderer;
 use super::overlay::OverlayRenderer;
+use crate::config::DisplayConfig;
 
 #[derive(Debug)]
 /// Handles low-level X11 window creation, rendering, and resource management.
@@ -104,6 +105,7 @@ impl<'a> ThumbnailRenderer<'a> {
     fn setup_window_properties(
         ctx: &AppContext,
         window: Window,
+        opacity: u32,
         character_name: &str,
     ) -> Result<()> {
         // Set PID so we can identify our own thumbnail windows
@@ -128,7 +130,7 @@ impl<'a> ThumbnailRenderer<'a> {
                 window,
                 ctx.atoms.net_wm_window_opacity,
                 AtomEnum::CARDINAL,
-                &[ctx.config.opacity],
+                &[opacity],
             )
             .context(format!(
                 "Failed to set window opacity for '{}'",
@@ -281,7 +283,8 @@ impl<'a> ThumbnailRenderer<'a> {
         character_name: &str,
         src: Window,
         src_depth: u8,
-        font_renderer: &'a FontRenderer,
+        display_config: &crate::config::DisplayConfig,
+        font_renderer: &FontRenderer,
         x: i16,
         y: i16,
         dimensions: Dimensions,
@@ -322,7 +325,7 @@ impl<'a> ThumbnailRenderer<'a> {
             should_cleanup: true,
         };
 
-        Self::setup_window_properties(ctx, window, character_name)?;
+        Self::setup_window_properties(ctx, window, display_config.opacity, character_name)?;
 
         // Create rendering resources
         let (src_picture, dst_picture) =
@@ -331,7 +334,7 @@ impl<'a> ThumbnailRenderer<'a> {
         // Create overlay renderer
         let overlay = OverlayRenderer::new(
             ctx.conn,
-            ctx.config,
+            display_config,
             ctx.formats,
             font_renderer,
             ctx.screen.root,
@@ -508,13 +511,15 @@ impl<'a> ThumbnailRenderer<'a> {
     /// * `skipped` - If true, draws the skipped indicator (diagonal red lines).
     pub fn border(
         &self,
+        display_config: &DisplayConfig,
         character_name: &str,
         dimensions: Dimensions,
         focused: bool,
         skipped: bool,
+        font_renderer: &FontRenderer,
     ) -> Result<()> {
         self.overlay
-            .draw_border(character_name, dimensions, focused, skipped)?;
+            .draw_border(display_config, character_name, dimensions, focused, skipped, font_renderer)?;
 
         self.overlay(character_name, dimensions)
             .context(format!("Failed to apply overlay for '{}'", character_name))
@@ -523,8 +528,15 @@ impl<'a> ThumbnailRenderer<'a> {
     /// Renders the "MINIMIZED" state overlay.
     ///
     /// Clears any existing border and draws the localized logic for minimized windows.
-    pub fn minimized(&self, character_name: &str, dimensions: Dimensions) -> Result<()> {
-        self.overlay.draw_minimized(character_name, dimensions)?;
+    pub fn minimized(
+        &self,
+        display_config: &DisplayConfig,
+        character_name: &str,
+        dimensions: Dimensions,
+        font_renderer: &FontRenderer,
+    ) -> Result<()> {
+        self.overlay
+            .draw_minimized(display_config, character_name, dimensions, font_renderer)?;
         self.update(character_name, dimensions).context(format!(
             "Failed to update minimized display for '{}'",
             character_name
@@ -533,11 +545,17 @@ impl<'a> ThumbnailRenderer<'a> {
     }
 
     /// Updates the text overlay with the character name.
-    pub fn update_name(&self, character_name: &str, dimensions: Dimensions) -> Result<()> {
+    pub fn update_name(
+        &self,
+        display_config: &DisplayConfig,
+        character_name: &str,
+        dimensions: Dimensions,
+        font_renderer: &FontRenderer,
+    ) -> Result<()> {
         // Calculate appropriate border size to preserve the hole
         // We default to focused=false since this is usually called during initialization or generic updates
         // However, if we are focused, the next border() call will correct it.
-        let border_size = self.overlay.calculate_border_size(character_name, false);
+        let border_size = self.overlay.calculate_border_size(display_config, character_name, false);
 
         // Must clear content area explicitly now
         self.overlay
@@ -548,7 +566,7 @@ impl<'a> ThumbnailRenderer<'a> {
             ))?;
 
         self.overlay
-            .update_name(character_name, dimensions, border_size)
+            .update_name(display_config, character_name, dimensions, border_size, font_renderer)
     }
 
     /// Composites the text/border overlay on top of the thumbnail content.

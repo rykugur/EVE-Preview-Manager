@@ -35,9 +35,7 @@ pub struct OverlayRenderer<'a> {
 
     // === Borrowed Dependencies ===
     conn: &'a RustConnection,
-    config: &'a DisplayConfig,
     formats: &'a crate::x11::CachedFormats,
-    font_renderer: &'a FontRenderer,
 }
 
 impl<'a> OverlayRenderer<'a> {
@@ -47,15 +45,15 @@ impl<'a> OverlayRenderer<'a> {
     /// * `conn` - X11 connection.
     /// * `config` - Display configuration (colors, sizes).
     /// * `formats` - X11 Render formats.
-    /// * `font_renderer` - System for rendering text glyphs.
+    /// * `font_renderer` - System for rendering text glyphs (used for initial render).
     /// * `root` - Root window ID (for pixmap creation).
     /// * `dimensions` - Initial size of the overlay.
     /// * `character_name` - Debug name for error logging.
-    pub fn new(
+    pub fn new<'b>(
         conn: &'a RustConnection,
-        config: &'a DisplayConfig,
+        config: &'b DisplayConfig,
         formats: &'a crate::x11::CachedFormats,
-        font_renderer: &'a FontRenderer,
+        font_renderer: &FontRenderer,
         root: u32,
         dimensions: Dimensions,
         character_name: &str,
@@ -150,13 +148,11 @@ impl<'a> OverlayRenderer<'a> {
             inactive_border_fill,
             skipped_indicator_gc,
             conn,
-            config,
             formats,
-            font_renderer,
         };
 
         // Render initial name
-        let initial_border_size = renderer.calculate_border_size(character_name, false);
+        let initial_border_size = renderer.calculate_border_size(config, character_name, false);
         renderer
             .clear_content_area(dimensions, initial_border_size)
             .context(format!(
@@ -165,7 +161,13 @@ impl<'a> OverlayRenderer<'a> {
             ))?;
 
         renderer
-            .update_name(character_name, dimensions, initial_border_size)
+            .update_name(
+                config,
+                character_name,
+                dimensions,
+                initial_border_size,
+                font_renderer,
+            )
             .context(format!(
                 "Failed to render initial name for '{}'",
                 character_name
@@ -199,7 +201,7 @@ impl<'a> OverlayRenderer<'a> {
         Ok(())
     }
 
-    // ... (calculate_border_size, update_name unchanged)
+    // ... (calculate_border_size unused here, implementation below)
 
     /// Draws the skipped indicator (diagonal red lines)
     pub fn draw_skipped_indicator(&self, dimensions: Dimensions) -> Result<()> {
@@ -229,21 +231,21 @@ impl<'a> OverlayRenderer<'a> {
     }
 
     /// Calculates the effective border size implementation
-    pub fn calculate_border_size(&self, character_name: &str, focused: bool) -> u16 {
-        if let Some(settings) = self.config.character_settings.get(character_name) {
+    pub fn calculate_border_size(&self, config: &DisplayConfig, character_name: &str, focused: bool) -> u16 {
+        if let Some(settings) = config.character_settings.get(character_name) {
             if focused {
                 settings
                     .override_active_border_size
-                    .unwrap_or(self.config.active_border_size)
+                    .unwrap_or(config.active_border_size)
             } else {
                 settings
                     .override_inactive_border_size
-                    .unwrap_or(self.config.inactive_border_size)
+                    .unwrap_or(config.inactive_border_size)
             }
         } else if focused {
-            self.config.active_border_size
+            config.active_border_size
         } else {
-            self.config.inactive_border_size
+            config.inactive_border_size
         }
     }
 
@@ -275,30 +277,32 @@ impl<'a> OverlayRenderer<'a> {
     /// NOTE: This does NOT clear the background. You must call `clear_content_area` first.
     pub fn update_name(
         &self,
+        config: &DisplayConfig,
         character_name: &str,
         _dimensions: Dimensions,
         _border_size: u16,
+        font_renderer: &FontRenderer,
     ) -> Result<()> {
         // Resolve settings overrides
         let (display_name, text_color) =
-            if let Some(settings) = self.config.character_settings.get(character_name) {
+            if let Some(settings) = config.character_settings.get(character_name) {
                 let name = settings.alias.as_deref().unwrap_or(character_name);
                 let color = if let Some(hex_color) = &settings.override_text_color {
                     crate::color::HexColor::parse(hex_color)
                         .map(|c| c.argb32())
-                        .unwrap_or(self.config.text_color)
+                        .unwrap_or(config.text_color)
                 } else {
-                    self.config.text_color
+                    config.text_color
                 };
                 (name, color)
             } else {
-                (character_name, self.config.text_color)
+                (character_name, config.text_color)
             };
 
         // Render text based on font renderer type
-        if self.font_renderer.requires_direct_rendering() {
+        if font_renderer.requires_direct_rendering() {
             // X11 fallback: direct rendering using ImageText8
-            if let Some(font_id) = self.font_renderer.x11_font_id() {
+            if let Some(font_id) = font_renderer.x11_font_id() {
                 // Create GC with font
                 let gc = self
                     .conn
@@ -320,12 +324,12 @@ impl<'a> OverlayRenderer<'a> {
                     ))?;
 
                 // ImageText8 renders directly to drawable
-                self.conn
+                    self.conn
                     .image_text8(
                         self.overlay_pixmap,
                         gc,
-                        self.config.text_offset.x,
-                        self.config.text_offset.y + self.font_renderer.size() as i16, // Baseline adjustment
+                        config.text_offset.x,
+                        config.text_offset.y + font_renderer.size() as i16, // Baseline adjustment
                         display_name.as_bytes(),
                     )
                     .context(format!(
@@ -337,8 +341,7 @@ impl<'a> OverlayRenderer<'a> {
             }
         } else {
             // Fontdue: pre-rendered bitmap
-            let rendered = self
-                .font_renderer
+            let rendered = font_renderer
                 .render_text(display_name, text_color)
                 .context(format!(
                     "Failed to render text '{}' with font renderer",
@@ -411,8 +414,8 @@ impl<'a> OverlayRenderer<'a> {
                         0,
                         0,
                         0,
-                        self.config.text_offset.x,
-                        self.config.text_offset.y,
+                        config.text_offset.x,
+                        config.text_offset.y,
                         rendered.width as u16,
                         rendered.height as u16,
                     )
@@ -440,10 +443,12 @@ impl<'a> OverlayRenderer<'a> {
     /// 3. Border - Top (covers everything at edges)
     pub fn draw_border(
         &self,
+        config: &DisplayConfig,
         character_name: &str,
         dimensions: Dimensions,
         focused: bool,
         skipped: bool,
+        font_renderer: &FontRenderer,
     ) -> Result<()> {
         // 1. Clear the entire overlay first (transparent background)
         self.conn
@@ -470,12 +475,12 @@ impl<'a> OverlayRenderer<'a> {
         }
 
         // Determine effective border size and color source
-        let effective_size = self.calculate_border_size(character_name, focused);
-
+        let effective_size = self.calculate_border_size(config, character_name, focused);
+        
         // 3. Draw Text
         // We pass effective_size mainly if text positioning depended on it,
         // but currently text is positioned by config offset.
-        self.update_name(character_name, dimensions, effective_size)
+        self.update_name(config, character_name, dimensions, effective_size, font_renderer)
             .context(format!(
                 "Failed to update name overlay for '{}'",
                 character_name
@@ -486,12 +491,12 @@ impl<'a> OverlayRenderer<'a> {
         let should_draw_border = if focused {
             effective_size > 0
         } else {
-            self.config.inactive_border_enabled && effective_size > 0
+            config.inactive_border_enabled && effective_size > 0
         };
 
         if should_draw_border {
             let (fill_picture, temp_fill_id) =
-                if let Some(settings) = self.config.character_settings.get(character_name) {
+                if let Some(settings) = config.character_settings.get(character_name) {
                     let override_color_hex = if focused {
                         settings.override_active_border_color.as_ref()
                     } else {
@@ -597,14 +602,20 @@ impl<'a> OverlayRenderer<'a> {
     }
 
     /// Draws the "MINIMIZED" state overlay.
-    pub fn draw_minimized(&self, character_name: &str, dimensions: Dimensions) -> Result<()> {
-        self.draw_border(character_name, dimensions, false, false)
+    pub fn draw_minimized(
+        &self,
+        config: &DisplayConfig,
+        character_name: &str,
+        dimensions: Dimensions,
+        font_renderer: &FontRenderer,
+    ) -> Result<()> {
+        self.draw_border(config, character_name, dimensions, false, false, font_renderer)
             .context(format!(
                 "Failed to clear border for minimized window '{}'",
                 character_name
             ))?;
 
-        if !self.config.minimized_overlay_enabled {
+        if !config.minimized_overlay_enabled {
             return Ok(());
         }
 

@@ -161,30 +161,88 @@ impl Default for ThumbnailState {
 
 /// Per-character settings: position and thumbnail dimensions
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(from = "CharacterSettingsProxy", into = "CharacterSettingsProxy")]
 pub struct CharacterSettings {
     pub x: i16,
     pub y: i16,
     /// Thumbnail dimensions (0 = use auto-detect)
-    #[serde(flatten)]
     pub dimensions: Dimensions,
 
     // -- Advanced Character Settings --
-    #[serde(default)]
     pub alias: Option<String>,
-    #[serde(default)]
     pub notes: Option<String>,
-    #[serde(default)]
     pub override_active_border_color: Option<String>,
-    #[serde(default)]
     pub override_inactive_border_color: Option<String>,
-    #[serde(default)]
     pub override_active_border_size: Option<u16>,
-    #[serde(default)]
     pub override_inactive_border_size: Option<u16>,
-    #[serde(default)]
     pub override_text_color: Option<String>,
-    #[serde(default)]
     pub preview_mode: PreviewMode,
+}
+
+#[derive(Serialize, Deserialize)]
+struct CharacterSettingsProxy {
+    x: i16,
+    y: i16,
+    #[serde(default)]
+    width: u16,
+    #[serde(default)]
+    height: u16,
+    #[serde(default)]
+    alias: Option<String>,
+    #[serde(default)]
+    notes: Option<String>,
+    #[serde(default)]
+    override_active_border_color: Option<String>,
+    #[serde(default)]
+    override_inactive_border_color: Option<String>,
+    #[serde(default)]
+    override_active_border_size: Option<u16>,
+    #[serde(default)]
+    override_inactive_border_size: Option<u16>,
+    #[serde(default)]
+    override_text_color: Option<String>,
+    #[serde(default)]
+    preview_mode: PreviewMode,
+}
+
+impl From<CharacterSettings> for CharacterSettingsProxy {
+    fn from(settings: CharacterSettings) -> Self {
+        Self {
+            x: settings.x,
+            y: settings.y,
+            width: settings.dimensions.width,
+            height: settings.dimensions.height,
+            alias: settings.alias,
+            notes: settings.notes,
+            override_active_border_color: settings.override_active_border_color,
+            override_inactive_border_color: settings.override_inactive_border_color,
+            override_active_border_size: settings.override_active_border_size,
+            override_inactive_border_size: settings.override_inactive_border_size,
+            override_text_color: settings.override_text_color,
+            preview_mode: settings.preview_mode,
+        }
+    }
+}
+
+impl From<CharacterSettingsProxy> for CharacterSettings {
+    fn from(proxy: CharacterSettingsProxy) -> Self {
+        Self {
+            x: proxy.x,
+            y: proxy.y,
+            dimensions: Dimensions {
+                width: proxy.width,
+                height: proxy.height,
+            },
+            alias: proxy.alias,
+            notes: proxy.notes,
+            override_active_border_color: proxy.override_active_border_color,
+            override_inactive_border_color: proxy.override_inactive_border_color,
+            override_active_border_size: proxy.override_active_border_size,
+            override_inactive_border_size: proxy.override_inactive_border_size,
+            override_text_color: proxy.override_text_color,
+            preview_mode: proxy.preview_mode,
+        }
+    }
 }
 
 impl CharacterSettings {

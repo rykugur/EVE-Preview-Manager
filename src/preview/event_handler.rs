@@ -21,13 +21,19 @@ use super::session_state::SessionState;
 use super::snapping::{self, Rect};
 use super::thumbnail::Thumbnail;
 
+use crate::ipc::DaemonMessage;
+use ipc_channel::ipc::IpcSender;
+
 /// Context bundle for event handlers to reduce argument count
 pub struct EventContext<'a, 'b> {
-    pub app_ctx: &'a AppContext<'a>,
+    pub app_ctx: &'b AppContext<'a>,
     pub daemon_config: &'b mut DaemonConfig,
     pub eve_clients: &'b mut HashMap<Window, Thumbnail<'a>>,
     pub session_state: &'b mut SessionState,
     pub cycle_state: &'b mut CycleState,
+    pub status_tx: &'b IpcSender<DaemonMessage>,
+    pub font_renderer: &'b crate::preview::font::FontRenderer,
+    pub display_config: &'b crate::config::DisplayConfig,
 }
 
 /// Handle DamageNotify events - update damaged thumbnail
@@ -37,7 +43,7 @@ fn handle_damage_notify(
     event: x11rb::protocol::damage::NotifyEvent,
 ) -> Result<()> {
     // Skip rendering updates if thumbnails are disabled (daemon still runs for hotkeys)
-    if !ctx.app_ctx.config.enabled {
+    if !ctx.display_config.enabled {
         return Ok(());
     }
 
@@ -47,10 +53,12 @@ fn handle_damage_notify(
         .values()
         .find(|thumbnail| thumbnail.damage() == event.damage)
     {
-        thumbnail.update().context(format!(
-            "Failed to update thumbnail for damage event (damage={})",
-            event.damage
-        ))?;
+        thumbnail
+            .update(ctx.display_config, ctx.font_renderer)
+            .context(format!(
+                "Failed to update thumbnail for damage event (damage={})",
+                event.damage
+            ))?;
         ctx.app_ctx
             .conn
             .damage_subtract(event.damage, 0u32, 0u32)
@@ -90,11 +98,14 @@ fn handle_create_notify(ctx: &mut EventContext, event: CreateNotifyEvent) -> Res
             .add_window(identity.name.clone(), event.window);
 
         // Only create thumbnail if thumbnails are enabled
-        if ctx.app_ctx.config.enabled {
+        if ctx.display_config.enabled {
             match check_and_create_window(
                 ctx.app_ctx,
+
                 ctx.daemon_config,
+                ctx.display_config,
                 event.window,
+                ctx.font_renderer,
                 ctx.session_state,
                 ctx.eve_clients,
             ) {
@@ -123,37 +134,25 @@ fn handle_create_notify(ctx: &mut EventContext, event: CreateNotifyEvent) -> Res
                                 if identity.is_eve {
                                     ctx.daemon_config
                                         .character_thumbnails
-                                        .insert(thumbnail.character_name.clone(), settings);
+                                        .insert(thumbnail.character_name.clone(), settings.clone());
                                 } else {
                                     ctx.daemon_config
                                         .custom_source_thumbnails
-                                        .insert(thumbnail.character_name.clone(), settings);
+                                        .insert(thumbnail.character_name.clone(), settings.clone());
                                 }
-                            }
 
-                            // Conditionally persist to disk based on auto-save setting
-                            // NOTE: If auto-save is DISABLED, we still perform a "safe save" of ONLY the new character's entry
-                            if ctx.daemon_config.profile.thumbnail_auto_save_position {
-                                if let Err(e) = ctx.daemon_config.save() {
-                                    tracing::warn!(
-                                        "Failed to save initial position for new item '{}': {}",
-                                        thumbnail.character_name,
-                                        e
-                                    );
-                                }
-                            } else {
-                                // If auto-save is off, we still try to save to ensure persistence if the user exits gracefully later?
-                                // Actually, `save()` handles everything safely.
-                                // If we want to be absolutely sure we don't stomp other changes, we'd use Merge strategy only on this entry.
-                                // But `save()` uses Preserve strategy which is generally safe.
-                                // For simplicity and robustness, reuse the same save() call.
-                                if let Err(e) = ctx.daemon_config.save() {
-                                    tracing::warn!(
-                                        "Failed to safe-save initial position for new item '{}': {}",
-                                        thumbnail.character_name,
-                                        e
-                                    );
-                                }
+                                // Send PositionChanged IPC message instead of saving to disk
+                                // For a new character, this serves as the initial registration with the GUI
+                                let _ = ctx.status_tx.send(DaemonMessage::PositionChanged {
+                                    name: thumbnail.character_name.clone(),
+                                    x: settings.x,
+                                    y: settings.y,
+                                    width: settings.dimensions.width,
+                                    height: settings.dimensions.height,
+                                });
+                                let _ = ctx.status_tx.send(DaemonMessage::CharacterDetected(
+                                    thumbnail.character_name.clone(),
+                                ));
                             }
                         }
                         Err(e) => {
@@ -169,8 +168,12 @@ fn handle_create_notify(ctx: &mut EventContext, event: CreateNotifyEvent) -> Res
 
                     // Draw initial border (inactive) for the new thumbnail to ensure it matches configuration
                     if let Some(thumb) = ctx.eve_clients.get_mut(&event.window)
-                        && let Err(e) =
-                            thumb.border(false, ctx.cycle_state.is_skipped(&thumb.character_name))
+                        && let Err(e) = thumb.border(
+                            ctx.display_config,
+                            false,
+                            ctx.cycle_state.is_skipped(&thumb.character_name),
+                            ctx.font_renderer,
+                        )
                     {
                         tracing::warn!(window = event.window, error = %e, "Failed to draw initial border for new window");
                     }
@@ -242,7 +245,7 @@ fn handle_focus_in(ctx: &mut EventContext, event: FocusInEvent) -> Result<()> {
 
     // Handle "Hide when no focus" logic - Reveal and refresh if needed
     // We check this BEFORE updating the specific focused window to ensure clean state transitions
-    if ctx.app_ctx.config.hide_when_no_focus && ctx.eve_clients.values().any(|x| !x.is_visible()) {
+    if ctx.display_config.hide_when_no_focus && ctx.eve_clients.values().any(|x| !x.is_visible()) {
         for thumbnail in ctx.eve_clients.values_mut() {
             debug!(character = %thumbnail.character_name, "Revealing thumbnail due to focus change");
             thumbnail.visibility(true).context(format!(
@@ -250,10 +253,12 @@ fn handle_focus_in(ctx: &mut EventContext, event: FocusInEvent) -> Result<()> {
                 thumbnail.character_name
             ))?;
             // Force immediate repaint to ensure content is visible (MapWindow doesn't guarantee content)
-            thumbnail.update().context(format!(
-                "Failed to update thumbnail '{}' on focus reveal",
-                thumbnail.character_name
-            ))?;
+            thumbnail
+                .update(ctx.display_config, ctx.font_renderer)
+                .context(format!(
+                    "Failed to update thumbnail '{}' on focus reveal",
+                    thumbnail.character_name
+                ))?;
         }
     }
 
@@ -267,7 +272,12 @@ fn handle_focus_in(ctx: &mut EventContext, event: FocusInEvent) -> Result<()> {
             if !thumbnail.state.is_focused() {
                 thumbnail.state = ThumbnailState::Normal { focused: true };
                 thumbnail
-                    .border(true, ctx.cycle_state.is_skipped(&thumbnail.character_name))
+                    .border(
+                        ctx.display_config,
+                        true,
+                        ctx.cycle_state.is_skipped(&thumbnail.character_name),
+                        ctx.font_renderer,
+                    )
                     .context(format!(
                         "Failed to update border on focus for '{}'",
                         thumbnail.character_name
@@ -278,7 +288,12 @@ fn handle_focus_in(ctx: &mut EventContext, event: FocusInEvent) -> Result<()> {
             // We explicitly toggle it to inactive/gray border
             thumbnail.state = ThumbnailState::Normal { focused: false };
             thumbnail
-                .border(false, ctx.cycle_state.is_skipped(&thumbnail.character_name))
+                .border(
+                    ctx.display_config,
+                    false,
+                    ctx.cycle_state.is_skipped(&thumbnail.character_name),
+                    ctx.font_renderer,
+                )
                 .context(format!(
                     "Failed to clear border for '{}' (focus moved to '{}')",
                     thumbnail.character_name,
@@ -308,7 +323,7 @@ fn handle_focus_out(ctx: &mut EventContext, event: FocusOutEvent) -> Result<()> 
     // However, for "Hide when no focus", we need to check if we should hide everything.
     // Since we track "Visual Focus" (Border) in thumbnail.state, we can't use it for system focus check.
     // Instead, we check if the stored visual focus matches the event window.
-    if ctx.app_ctx.config.hide_when_no_focus {
+    if ctx.display_config.hide_when_no_focus {
         // Check if the window losing focus was our "Active" one
         let was_active = ctx
             .eve_clients
@@ -489,28 +504,21 @@ fn handle_button_release(ctx: &mut EventContext, event: ButtonReleaseEvent) -> R
                     .insert(thumbnail.character_name.clone(), settings);
             }
 
-            // Conditionally persist to disk based on auto-save setting
-            if ctx.daemon_config.profile.thumbnail_auto_save_position {
-                debug!(
-                    window = thumbnail.window(),
-                    x = geom.x,
-                    y = geom.y,
-                    "Saved position after drag (auto-save enabled)"
-                );
-                ctx.daemon_config
-                    .save_with_strategy(crate::config::profile::SaveStrategy::Merge)
-                    .context(format!(
-                        "Failed to save position for '{}' after drag",
-                        thumbnail.character_name
-                    ))?;
-            } else {
-                debug!(
-                    window = thumbnail.window(),
-                    x = geom.x,
-                    y = geom.y,
-                    "Updated position in memory (auto-save disabled)"
-                );
-            }
+            // Send IPC message instead of saving to disk
+            let _ = ctx.status_tx.send(DaemonMessage::PositionChanged {
+                name: thumbnail.character_name.clone(),
+                x: geom.x,
+                y: geom.y,
+                width: thumbnail.dimensions.width,
+                height: thumbnail.dimensions.height,
+            });
+
+            debug!(
+                window = thumbnail.window(),
+                x = geom.x,
+                y = geom.y,
+                "Sent PositionChanged IPC message after drag"
+            );
         }
 
         // Clear dragging state and free cached snap targets
@@ -743,20 +751,20 @@ pub fn handle_event(ctx: &mut EventContext, event: Event) -> Result<()> {
                             .character_thumbnails
                             .insert(new_character_name.to_string(), settings.clone());
 
-                        // Persist to disk
-                        if ctx.daemon_config.profile.thumbnail_auto_save_position {
-                            ctx.daemon_config.save().context(format!(
-                                "Failed to save config after character login '{}'",
-                                new_character_name
-                            ))?;
-                        } else {
-                            ctx.daemon_config
-                                .save_new_character(new_character_name, settings.clone())
-                                .context(format!(
-                                    "Failed to safe-save config after character login '{}'",
-                                    new_character_name
-                                ))?;
-                        }
+                        // Send IPC updates
+                        // PositionChanged acts as initial registration
+                        let _ = ctx.status_tx.send(DaemonMessage::CharacterDetected(
+                            new_character_name.to_string(),
+                        ));
+
+                        // We also send position update to ensure GUI has the correct inherited/reset position
+                        let _ = ctx.status_tx.send(DaemonMessage::PositionChanged {
+                            name: new_character_name.to_string(),
+                            x: settings.x,
+                            y: settings.y,
+                            width: settings.dimensions.width,
+                            height: settings.dimensions.height,
+                        });
 
                         Some(settings)
                     };
@@ -772,7 +780,12 @@ pub fn handle_event(ctx: &mut EventContext, event: Event) -> Result<()> {
 
                     // Update thumbnail (moves/resizes to new settings)
                     thumbnail
-                        .set_character_name(new_character_name.to_string(), final_settings)
+                        .set_character_name(
+                            new_character_name.to_string(),
+                            final_settings,
+                            ctx.display_config,
+                            ctx.font_renderer,
+                        )
                         .context(format!(
                             "Failed to update thumbnail after character change from '{}'",
                             old_name
@@ -783,15 +796,17 @@ pub fn handle_event(ctx: &mut EventContext, event: Event) -> Result<()> {
                     if !thumbnail.state.is_minimized() {
                         thumbnail
                             .border(
+                                ctx.display_config,
                                 thumbnail.state.is_focused(),
                                 ctx.cycle_state.is_skipped(&thumbnail.character_name),
+                                ctx.font_renderer,
                             )
                             .context("Failed to restore border after character change")?;
                     }
                 } else {
                     // Handle logout: Clear the name, no position/size change
                     thumbnail
-                        .set_character_name(String::new(), None)
+                        .set_character_name(String::new(), None, ctx.display_config, ctx.font_renderer)
                         .context(format!(
                             "Failed to clear thumbnail name after logout from '{}'",
                             old_name
@@ -816,11 +831,13 @@ pub fn handle_event(ctx: &mut EventContext, event: Event) -> Result<()> {
                         .add_window(identity.name.clone(), event.window);
 
                     // Only create thumbnail if thumbnails are enabled
-                    if ctx.app_ctx.config.enabled
+                    if ctx.display_config.enabled
                         && let Some(thumbnail) = check_and_create_window(
                             ctx.app_ctx,
                             ctx.daemon_config,
+                            ctx.display_config,
                             event.window,
+                            ctx.font_renderer,
                             ctx.session_state,
                             ctx.eve_clients,
                         )
@@ -853,49 +870,30 @@ pub fn handle_event(ctx: &mut EventContext, event: Event) -> Result<()> {
                                 .character_thumbnails
                                 .insert(thumbnail.character_name.clone(), settings.clone());
 
-                            // Persist to disk
-                            if ctx.daemon_config.profile.thumbnail_auto_save_position {
-                                ctx.daemon_config
-                                    .save_with_strategy(crate::config::profile::SaveStrategy::Merge)
-                                    .context(format!(
-                                        "Failed to save position for new log in '{}'",
-                                        thumbnail.character_name
-                                    ))?;
-                            } else {
-                                // If auto-save is OFF, we still need to track this character so it appears in the menu
-                                // But we won't clutter the config file with positions for every character until explicitly saved
-                                let settings = ctx
-                                    .daemon_config
-                                    .character_thumbnails
-                                    .get(&thumbnail.character_name)
-                                    .cloned()
-                                    .unwrap_or_else(|| {
-                                        crate::types::CharacterSettings::new(
-                                            geom.x,
-                                            geom.y,
-                                            thumbnail.dimensions.width,
-                                            thumbnail.dimensions.height,
-                                        )
-                                    });
-
-                                // Important: We must persist this new character to the config file so the GUI sees it.
-                                // But we use a specialized save method that ONLY adds the new key without saving
-                                // other pending position changes (respecting auto-save=off).
-                                ctx.daemon_config
-                                    .save_new_character(&thumbnail.character_name, settings)
-                                    .context(format!(
-                                        "Failed to safe-save initial position for newly detected character '{}'",
-                                        thumbnail.character_name
-                                    ))?;
-                            }
+                            // Send IPC updates
+                            // PositionChanged acts as initial registration
+                            let _ = ctx.status_tx.send(DaemonMessage::PositionChanged {
+                                name: thumbnail.character_name.clone(),
+                                x: settings.x,
+                                y: settings.y,
+                                width: settings.dimensions.width,
+                                height: settings.dimensions.height,
+                            });
+                            let _ = ctx.status_tx.send(DaemonMessage::CharacterDetected(
+                                thumbnail.character_name.clone(),
+                            ));
                         }
 
                         ctx.eve_clients.insert(event.window, thumbnail);
 
                         // Draw initial border (inactive) for the new thumbnail to ensure it matches configuration
                         if let Some(thumb) = ctx.eve_clients.get_mut(&event.window)
-                            && let Err(e) = thumb
-                                .border(false, ctx.cycle_state.is_skipped(&thumb.character_name))
+                            && let Err(e) = thumb.border(
+                                ctx.display_config,
+                                false,
+                                ctx.cycle_state.is_skipped(&thumb.character_name),
+                                ctx.font_renderer,
+                            )
                         {
                             tracing::warn!(window = event.window, error = %e, "Failed to draw initial border for newly detected window");
                         }
@@ -919,10 +917,12 @@ pub fn handle_event(ctx: &mut EventContext, event: Event) -> Result<()> {
                     .value32()
                 && state.any(|s| s == ctx.app_ctx.atoms.net_wm_state_hidden)
             {
-                thumbnail.minimized().context(format!(
-                    "Failed to set minimized state for '{}'",
-                    thumbnail.character_name
-                ))?;
+                thumbnail
+                    .minimized(ctx.display_config, ctx.font_renderer)
+                    .context(format!(
+                        "Failed to set minimized state for '{}'",
+                        thumbnail.character_name
+                    ))?;
             }
             Ok(())
         }

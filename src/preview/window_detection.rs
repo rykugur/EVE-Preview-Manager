@@ -7,6 +7,7 @@ use x11rb::protocol::xproto::*;
 
 use crate::config::DaemonConfig;
 use crate::config::profile::CustomWindowRule;
+use crate::config::DisplayConfig;
 use crate::constants;
 use crate::types::Dimensions;
 use crate::x11::{AppContext, get_window_class, is_window_eve, is_window_minimized};
@@ -174,7 +175,9 @@ fn check_eve_window_internal(
 pub fn check_and_create_window<'a>(
     ctx: &AppContext<'a>,
     daemon_config: &DaemonConfig,
+    display_config: &DisplayConfig,
     window: Window,
+    font_renderer: &crate::preview::font::FontRenderer,
     state: &mut SessionState,
     existing_thumbnails: &HashMap<Window, Thumbnail>,
 ) -> Result<Option<Thumbnail<'a>>> {
@@ -206,7 +209,7 @@ pub fn check_and_create_window<'a>(
     // and `handle_create_notify` calls `identify_window` before calling this.
     // This function is strictly for determining if we should create a renderable thumbnail.
 
-    if !ctx.config.enabled {
+    if !display_config.enabled {
         return Ok(None);
     }
 
@@ -261,7 +264,8 @@ pub fn check_and_create_window<'a>(
         ctx,
         character_name.clone(),
         window,
-        ctx.font_renderer,
+        display_config,
+        font_renderer,
         position,
         dimensions,
         preview_mode,
@@ -276,7 +280,7 @@ pub fn check_and_create_window<'a>(
     let is_minimized = is_window_minimized(ctx.conn, window, ctx.atoms).unwrap_or(false);
 
     if is_minimized {
-        thumbnail.minimized()?;
+        thumbnail.minimized(display_config, font_renderer)?;
     } else {
         // NOTE: We rely on standard X11 Damage events to trigger the first update naturally.
         // Forcing an update here caused issues with fleeting windows.
@@ -294,6 +298,8 @@ pub fn check_and_create_window<'a>(
 /// Initial scan for existing EVE windows to populate thumbnails
 pub fn scan_eve_windows<'a>(
     ctx: &AppContext<'a>,
+    display_config: &DisplayConfig,
+    font_renderer: &crate::preview::font::FontRenderer,
     daemon_config: &mut DaemonConfig,
     state: &mut SessionState,
 ) -> Result<HashMap<Window, Thumbnail<'a>>> {
@@ -320,7 +326,7 @@ pub fn scan_eve_windows<'a>(
     for w in windows {
         // Use the map we are building as the "existing_thumbnails" context for limit checks
         // We handle errors gracefully here so one bad window doesn't prevent the daemon from starting
-        match check_and_create_window(ctx, daemon_config, w, state, &eve_clients) {
+        match check_and_create_window(ctx, daemon_config, display_config, w, font_renderer, state, &eve_clients) {
             Ok(Some(eve)) => {
                 // Save initial position and dimensions (important for first-time characters)
                 // Query geometry to get actual position from X11
@@ -380,13 +386,6 @@ pub fn scan_eve_windows<'a>(
                 tracing::warn!("Failed to process window {} during initial scan: {}", w, e);
             }
         }
-    }
-
-    // Save once after processing all windows (avoids repeated disk writes)
-    if daemon_config.profile.thumbnail_auto_save_position && !eve_clients.is_empty() {
-        daemon_config
-            .save()
-            .context("Failed to save initial positions after startup scan")?;
     }
 
     ctx.conn

@@ -200,36 +200,49 @@ impl Serialize for HotkeyBinding {
 }
 
 // Custom deserialization from object format (with backward compatibility for array format)
+// Custom deserialization from object format (with backward compatibility for array format)
 impl<'de> Deserialize<'de> for HotkeyBinding {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
         #[derive(Deserialize)]
-        #[serde(untagged)]
-        enum HotkeyFormat {
-            Object {
-                keys: Vec<String>,
-                #[serde(default)]
-                source_devices: Vec<String>,
-            },
-            Array(Vec<String>),
+        struct HotkeyObject {
+            keys: Vec<String>,
+            #[serde(default)]
+            source_devices: Vec<String>,
         }
 
-        match HotkeyFormat::deserialize(deserializer)? {
-            HotkeyFormat::Object {
-                keys,
-                source_devices,
-            } => {
-                let mut binding =
-                    HotkeyBinding::from_key_array(&keys).map_err(de::Error::custom)?;
-                binding.source_devices = source_devices;
-                Ok(binding)
+        if deserializer.is_human_readable() {
+            #[derive(Deserialize)]
+            #[serde(untagged)]
+            enum HotkeyFormat {
+                Object(HotkeyObject),
+                Array(Vec<String>),
             }
-            HotkeyFormat::Array(keys) => {
-                // Legacy format - no source devices
-                HotkeyBinding::from_key_array(&keys).map_err(de::Error::custom)
+
+            match HotkeyFormat::deserialize(deserializer)? {
+                HotkeyFormat::Object(obj) => {
+                    let mut binding =
+                        HotkeyBinding::from_key_array(&obj.keys).map_err(de::Error::custom)?;
+                    binding.source_devices = obj.source_devices;
+                    Ok(binding)
+                }
+                HotkeyFormat::Array(keys) => {
+                    // Legacy format - no source devices
+                    HotkeyBinding::from_key_array(&keys).map_err(de::Error::custom)
+                }
             }
+        } else {
+            // Binary format (Bincode) - Strictly object/struct
+            // Since we control serialization, we know it's always the struct format
+            // keys then source_devices
+            // We can map it to the HotkeyObject struct
+            let obj = HotkeyObject::deserialize(deserializer)?;
+            let mut binding =
+                HotkeyBinding::from_key_array(&obj.keys).map_err(de::Error::custom)?;
+            binding.source_devices = obj.source_devices;
+            Ok(binding)
         }
     }
 }

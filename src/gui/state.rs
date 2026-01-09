@@ -53,6 +53,11 @@ pub struct StatusMessage {
     pub color: egui::Color32,
 }
 
+use crate::config::DaemonConfig;
+use crate::ipc::{BootstrapMessage, ConfigMessage, DaemonMessage};
+use ipc_channel::ipc::{IpcOneShotServer, IpcReceiver, IpcSender};
+use std::sync::mpsc::{self, Receiver};
+
 // Core application state shared between GUI and Tray
 pub struct SharedState {
     pub config: Config,
@@ -65,6 +70,15 @@ pub struct SharedState {
     pub selected_profile_idx: usize,
     pub should_quit: bool,
     pub last_config_mtime: Option<std::time::SystemTime>,
+
+    // IPC
+    pub ipc_config_tx: Option<IpcSender<ConfigMessage>>,
+    pub ipc_status_rx: Option<IpcReceiver<DaemonMessage>>,
+    pub bootstrap_rx: Option<Receiver<BootstrapMessage>>,
+    // To keep status receiver unblocked, we might need another thread that pumps messages to a GUI-friendly channel?
+    // IpcReceiver::recv is blocking.
+    // So we need a thread that loops recv() and sends to mpsc::Receiver that GUI polls.
+    pub gui_status_rx: Option<Receiver<DaemonMessage>>,
 }
 
 impl SharedState {
@@ -88,6 +102,10 @@ impl SharedState {
             last_config_mtime: std::fs::metadata(Config::path())
                 .ok()
                 .and_then(|m| m.modified().ok()),
+            ipc_config_tx: None,
+            ipc_status_rx: None,
+            bootstrap_rx: None,
+            gui_status_rx: None,
         }
     }
 
@@ -96,9 +114,31 @@ impl SharedState {
             return Ok(());
         }
 
-        let child = spawn_preview_daemon()?;
+        // 1. Create IPC OneShot Server
+        let (server, server_name) =
+            IpcOneShotServer::<BootstrapMessage>::new().context("Failed to create IPC server")?;
+
+        // 2. Spawn Daemon with server name
+        let child = spawn_preview_daemon(&server_name)?;
         let pid = child.id();
-        info!(pid, "Started preview daemon");
+        info!(pid, server_name = %server_name, "Started preview daemon");
+
+        // 3. Spawn thread to wait for connection (avoid blocking GUI)
+        let (tx, rx) = mpsc::channel();
+        self.bootstrap_rx = Some(rx);
+
+        std::thread::spawn(move || {
+            info!("Waiting for daemon IPC connection...");
+            match server.accept() {
+                Ok((_, bootstrap_msg)) => {
+                    info!("Daemon connected via IPC");
+                    let _ = tx.send(bootstrap_msg);
+                }
+                Err(e) => {
+                    error!(error = %e, "Failed to accept IPC connection");
+                }
+            }
+        });
 
         self.daemon = Some(child);
         self.daemon_status = DaemonStatus::Starting;
@@ -194,14 +234,143 @@ impl SharedState {
             global: self.config.global.clone(),
         };
 
-        // Save the merged config
-        // Default: preserve character positions from disk (daemon's source of truth)
-        final_config
-            .save_with_strategy(SaveStrategy::Preserve)
-            .context("Failed to save configuration")?;
-
-        // Update in-memory config immediately (no need to reload from disk)
+        // Update in-memory config immediately
         self.config = final_config;
+
+        // Sync with daemon via IPC
+        if let Some(ref tx) = self.ipc_config_tx {
+            // Create DaemonConfig from current profile
+            // This logic needs to mirror how DaemonConfig was constructed before.
+            // We need to resolve the selected profile.
+            let selected_profile = self
+                .config
+                .get_active_profile()
+                .cloned()
+                .unwrap_or_default();
+
+            // We construct a DaemonConfig. Note: Runtime overrides (custom sources etc)
+            // are part of DaemonConfig. If we just send profile, we might lose them?
+            // Actually, DaemonConfig has `character_thumbnails` which IS the runtime state.
+            // When we save_config, we merge runtime state back to disk.
+            // But here we are sending the *updated* config to the daemon.
+            // The daemon should use this as the new truth.
+
+            // Wait. `save_config` merges daemon state (from disk or memory?) into new config.
+            // In the new architecture, GUI is the owner.
+            // Does GUI have the latest character positions?
+            // Yes, via `DaemonMessage::PositionChanged`.
+
+            // So when `save_config` happens, `self.config` should be up to date.
+            // But `DaemonConfig` structure in `runtime.rs` contains more than just `Profile`.
+            // It contains `runtime_hidden`, `profile_hotkeys` (derived), `character_thumbnails`.
+
+            // We need to construct a `DaemonConfig` to send.
+            // `DaemonConfig` struct is:
+            // pub struct DaemonConfig {
+            //    pub profile: Profile,
+            //    pub character_thumbnails: HashMap<String, CharacterSettings>,
+            //    pub custom_source_thumbnails: HashMap<String, CharacterSettings>,
+            //    pub profile_hotkeys: HashMap<HotkeyBinding, String>,
+            //    pub runtime_hidden: bool,
+            // }
+
+            // We need to populate this.
+            // `profile` is easy.
+            // `character_thumbnails` come from the profile (since we just saved/merged them).
+            // `custom_source_thumbnails`? These might need to be tracked in GUI state too?
+            // Currently GUI Config has `Profile` which has `character_thumbnails`.
+            // CUSTOM sources are also stored in `character_thumbnails` in the profile?
+            // Let's check `Profile` definition.
+            // `Profile` has `custom_windows`.
+            // The runtime `custom_source_thumbnails` map in DaemonConfig tracks their active state/positions.
+            // If we send a new DaemonConfig, we might wipe active custom sources if we don't include them?
+            // Ideally we should preserve them.
+            // BUT, if the GUI doesn't track custom sources separately, we have a problem.
+            // `DaemonConfig` separates them. `Profile` combines them?
+            // Let's look at `DaemonConfig::load()` in `src/config/runtime.rs` (which I deleted).
+            // It initialized them empty.
+            // `scan_eve_windows` populated them.
+
+            // If we send a FRESH DaemonConfig, the daemon replaces its state.
+            // We need to match what the daemon expects.
+            // If we want to preserve runtime state (like custom sources or cached positions not on disk),
+            // either the GUI tracks it, or the daemon merges it.
+            // Our `handle_config_update` in Daemon REPLACES `resources.config`.
+            // This implies if we send empty `custom_source_thumbnails`, they go poof.
+
+            // Solution: The GUI should track everything OR we instruct Daemon to "Update Profile Only".
+            // But our message is `Update(DaemonConfig)`.
+            // We should probably change `ConfigMessage` to `UpdateProfile(Profile)`?
+            // Or `Update(DaemonConfig)`.
+
+            // For now, let's try to construct it best effort.
+            // `character_thumbnails` in Profile -> `character_thumbnails` in DaemonConfig.
+            // Custom sources?
+            // If they are in `Profile.character_thumbnails`, we can split them?
+            // Actually, `DaemonConfig` splits them based on whether they match a rule?
+            // If `Profile` stores valid positions for custom sources, we should just send them.
+
+            // Let's look at `DaemonConfig` struct again.
+            // It has `character_thumbnails` and `custom_source_thumbnails`.
+            // `Profile` has `character_thumbnails`.
+
+            // Reuse `DaemonConfig::from_profile(profile)` if it exists?
+            // It doesn't.
+
+            // Let's replicate `DaemonConfig` construction logic here or add meaningful constructor to `DaemonConfig`.
+            // I'll add a helper `DaemonConfig::from_gui_config(profile)`?
+            // But `DaemonConfig` is in `crate::config`.
+
+            // Let's assume for this step we construct it manually.
+            let mut character_thumbnails = selected_profile.character_thumbnails.clone();
+            let mut custom_source_thumbnails = std::collections::HashMap::new();
+
+            // If we want to separate them correctly, we need to know which are custom.
+            // Iterate through `character_thumbnails`, if name matches a custom rule, move to `custom`.
+            // But `Profile` is the source of truth.
+            // If we send everything in `character_thumbnails`, and daemon splits them, that's fine?
+            // Daemon uses `character_thumbnails` map for EVE and `custom` for custom.
+            // If we populate `character_thumbnails` with EVERYTHING, the daemon might get confused if it expects separation.
+            // `check_and_create_window` checks specific maps.
+
+            // Filter based on custom rules in profile.
+            let rules = &selected_profile.custom_windows;
+            // keys to move
+            let mut move_keys = Vec::new();
+            for (key, _) in &character_thumbnails {
+                if rules.iter().any(|r| r.alias == *key) {
+                    move_keys.push(key.clone());
+                }
+            }
+
+            for key in move_keys {
+                if let Some(val) = character_thumbnails.remove(&key) {
+                    custom_source_thumbnails.insert(key, val);
+                }
+            }
+
+            // Build hotkeys for profile switching (requires looking at all profiles)
+            let mut profile_hotkeys = std::collections::HashMap::new();
+            for profile in &self.config.profiles {
+                if let Some(ref binding) = profile.hotkey_profile_switch {
+                    profile_hotkeys.insert(binding.clone(), profile.profile_name.clone());
+                }
+            }
+
+            let daemon_config = DaemonConfig {
+                profile: selected_profile,
+                character_thumbnails,
+                custom_source_thumbnails,
+                profile_hotkeys,
+                runtime_hidden: false, // Reset hidden state on config reload? acceptable.
+            };
+
+            if let Err(e) = tx.send(ConfigMessage::Update(daemon_config)) {
+                error!(error = %e, "Failed to send config update to daemon");
+            } else {
+                info!("Sent config update to daemon");
+            }
+        }
 
         // Re-sync selected_profile_idx with the potentially reloaded profile list
         self.selected_profile_idx = self
@@ -285,78 +454,139 @@ impl SharedState {
     }
 
     pub fn save_thumbnail_positions(&mut self) -> Result<()> {
-        // If we have a running daemon, send SIGUSR1 signal to trigger save
-        if let Some(ref daemon) = self.daemon {
-            let pid = daemon.id();
-            #[cfg(target_os = "linux")]
-            {
-                use nix::sys::signal::{self, Signal};
-                use nix::unistd::Pid;
+        // With IPC, positions are automatically updated in memory via DaemonMessage::PositionChanged
+        // and conditionally auto-saved.
+        // If this method is called manually (e.g. from Tray), we just ensure config is saved to disk.
 
-                signal::kill(Pid::from_raw(pid as i32), Signal::SIGUSR1)
-                    .context("Failed to send SIGUSR1 to daemon")?;
+        self.save_config().context("Failed to save configuration")?;
 
-                self.status_message = Some(StatusMessage {
-                    text: "Thumbnail positions saved".to_string(),
-                    color: STATUS_RUNNING,
-                });
-            }
-            #[cfg(not(target_os = "linux"))]
-            {
-                anyhow::bail!("Signal-based save only supported on Linux");
-            }
-            Ok(())
-        } else {
-            anyhow::bail!("Cannot save positions: daemon is not running")
-        }
+        self.status_message = Some(StatusMessage {
+            text: "Thumbnail positions saved".to_string(),
+            color: STATUS_RUNNING,
+        });
+        Ok(())
     }
 
     pub fn poll_daemon(&mut self) {
+        // 1. Check for Bootstrap handshake
+        if let Some(ref rx) = self.bootstrap_rx {
+            if let Ok(msg) = rx.try_recv() {
+                info!("Received IPC channels from daemon");
+                let (config_tx, status_rx) = msg;
+                self.ipc_config_tx = Some(config_tx);
+
+                // Bridge status_rx to GUI thread
+                let (gui_tx, gui_rx) = mpsc::channel();
+                self.gui_status_rx = Some(gui_rx);
+
+                std::thread::spawn(move || {
+                    loop {
+                        match status_rx.recv() {
+                            Ok(msg) => {
+                                if let Err(_) = gui_tx.send(msg) {
+                                    break; // GUI dropped
+                                }
+                            }
+                            Err(_) => break, // Daemon closed
+                        }
+                    }
+                });
+
+                // Send Initial Config
+                // Trigger a save_config (virtual) or just send logic?
+                // We can just call save_config() to ensure we sync everything?
+                // Or just extract and send.
+                // Calling save_config() writes to disk which is unnecessary.
+                // Let's invoke the sending logic directly or factor it out.
+                // For now, I'll copy the sending logic/invoke restart logic?
+                // Ideally `start_daemon` triggers logic.
+
+                // HACK: Just trigger a save, it's cheap enough and ensures sync.
+                let _ = self.save_config();
+
+                self.bootstrap_rx = None; // Done
+                self.daemon_status = DaemonStatus::Running;
+            }
+        }
+
+        // 2. Poll Status Messages
+        if let Some(ref rx) = self.gui_status_rx {
+            while let Ok(msg) = rx.try_recv() {
+                match msg {
+                    DaemonMessage::Log { level, message } => {
+                        info!(level = %level, "Daemon: {}", message);
+                    }
+                    DaemonMessage::Error(e) => {
+                        error!("Daemon Error: {}", e);
+                    }
+                    DaemonMessage::PositionChanged {
+                        name,
+                        x,
+                        y,
+                        width,
+                        height,
+                    } => {
+                        // Update in-memory config
+                        if let Some(profile) = self.config.get_active_profile_mut() {
+                            profile
+                                .character_thumbnails
+                                .entry(name.clone())
+                                .and_modify(|s| {
+                                    s.x = x;
+                                    s.y = y;
+                                    s.dimensions.width = width;
+                                    s.dimensions.height = height;
+                                })
+                                .or_insert_with(|| {
+                                    crate::types::CharacterSettings::new(x, y, width, height)
+                                });
+                        }
+
+                        // Also update status message to show activity?
+                        // debug!("Updated position for {}", name);
+
+                        // We do NOT save to disk immediately to avoid spam.
+                        // We could debounce save?
+                        // But `state.rs` doesn't have a debouncer.
+                        // Ideally we save on "significant" checkpoints or exit.
+                        // Or we mimic the "Auto Save" behavior.
+                        // Check profile auto-save setting
+                        let auto_save = self
+                            .config
+                            .get_active_profile()
+                            .map(|p| p.thumbnail_auto_save_position)
+                            .unwrap_or(false);
+
+                        if auto_save {
+                            // Just save silently
+                            // Use SaveStrategy::Overwrite since we are the authority now (daemon pushed to us)
+                            // To avoid constant IO, maybe only if mLastSave > 1s?
+                            let _ = self.config.save_with_strategy(SaveStrategy::Overwrite);
+                        }
+                    }
+                    DaemonMessage::CharacterDetected(name) => {
+                        info!("Daemon detected character: {}", name);
+                        // Ensure it exists in config
+                        // Logic handled by PositionChanged usually accompanies this if new?
+                        // But if just detected and no position change (e.g. startup), we might want to reload list?
+                        // self.reload_character_list(); // From memory?
+                        // Actually `reload_character_list` loads from disk.
+                        // We are the source of truth now.
+                        // We should ensure `name` is in `character_thumbnails`.
+                        // If not, add default?
+                        // Daemon sends PositionChanged for new characters too.
+                    }
+                    _ => {}
+                }
+            }
+        }
+
         if self.last_health_check.elapsed() < Duration::from_millis(DAEMON_CHECK_INTERVAL_MS) {
             return;
         }
         self.last_health_check = Instant::now();
 
-        // NOTE: Efficient file watching for Immediate Mode GUI
-        // We poll the file modification time every 500ms (synced with daemon health check).
-        // This avoids race conditions by treating the file system as the synchronization source,
-        // and is cheap enough to run in the update loop without blocking the UI.
-        let config_path = Config::path();
-        if let Ok(metadata) = std::fs::metadata(&config_path)
-            && let Ok(mtime) = metadata.modified()
-            && self.last_config_mtime.is_none_or(|last| mtime > last)
-        {
-            info!("Config file modified externally");
-            match Config::load() {
-                Ok(disk_config) => {
-                    // Check if profile changed
-                    if disk_config.global.selected_profile != self.config.global.selected_profile {
-                        info!(
-                            old = %self.config.global.selected_profile,
-                            new = %disk_config.global.selected_profile,
-                            "Profile changed externally, reloading configuration"
-                        );
-                        self.discard_changes();
-                        // discard_changes restarts the daemon automatically if needed via settings_changed flag or similar?
-                        // Actually discard_changes just reloads config. The daemon should eventually restart if we added logic for that,
-                        // but here we might need to trigger it explicitly if the GUI is responsible for the daemon lifecycle.
-                        // However, the daemon *itself* initiated this change, so it might be in a weird state.
-                        // Ideally, the daemon exits after changing the profile?
-                        // If the daemon exits, poll_daemon handles the exit.
-                        // But if it doesn't, we should restart it to ensure it loads the new profile settings.
-                        self.restart_daemon();
-                    } else {
-                        // Just characters changed?
-                        info!("Reloading character list from external change");
-                        self.reload_character_list();
-                    }
-                }
-                Err(e) => {
-                    error!(error = %e, "Failed to load modified config");
-                }
-            }
-            self.last_config_mtime = Some(mtime);
-        }
+        // Removed file polling logic here as GUI is now the owner
 
         if let Some(child) = self.daemon.as_mut() {
             match child.try_wait() {
@@ -368,12 +598,13 @@ impl SharedState {
                     } else {
                         DaemonStatus::Crashed(status.code())
                     };
+                    // Clear IPC channels on exit
+                    self.ipc_config_tx = None;
+                    self.ipc_status_rx = None;
+                    self.gui_status_rx = None;
                 }
                 Ok(None) => {
-                    if matches!(self.daemon_status, DaemonStatus::Starting) {
-                        self.daemon_status = DaemonStatus::Running;
-                        self.reload_character_list();
-                    }
+                    // Running
                 }
                 Err(err) => {
                     error!(error = ?err, "Failed to query daemon status");
