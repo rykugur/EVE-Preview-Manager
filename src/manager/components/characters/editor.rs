@@ -1,6 +1,6 @@
 use super::CharactersState;
-use crate::config::profile::Profile;
 use crate::common::constants::gui::*;
+use crate::config::profile::Profile;
 use crate::manager::components::hotkey_settings::HotkeySettingsState;
 use eframe::egui;
 

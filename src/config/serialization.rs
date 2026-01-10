@@ -1,6 +1,7 @@
 use serde::Deserialize;
 use std::collections::HashMap;
 
+use crate::common::types::CharacterSettings;
 use crate::config::profile::{
     CustomWindowRule, CycleGroup, HotkeyBackendType, Profile,
     default_auto_save_thumbnail_positions, default_border_enabled, default_border_size,
@@ -9,7 +10,6 @@ use crate::config::profile::{
     default_text_font_family, default_thumbnail_enabled, default_thumbnail_height,
     default_thumbnail_width,
 };
-use crate::common::types::CharacterSettings;
 
 /// Helper struct for migration during deserialization
 #[derive(Deserialize)]

@@ -1,6 +1,6 @@
-use crate::config::profile::Profile;
 use crate::common::constants::gui::*;
 use crate::common::types::Dimensions;
+use crate::config::profile::Profile;
 use eframe::egui;
 
 /// State for visual settings UI

@@ -258,14 +258,16 @@ pub(crate) fn default_auto_save_thumbnail_positions() -> bool {
 fn default_profiles() -> Vec<Profile> {
     vec![Profile {
         profile_name: crate::common::constants::defaults::behavior::PROFILE_NAME.to_string(),
-        profile_description: crate::common::constants::defaults::behavior::PROFILE_DESCRIPTION.to_string(),
+        profile_description: crate::common::constants::defaults::behavior::PROFILE_DESCRIPTION
+            .to_string(),
         thumbnail_default_width: default_thumbnail_width(),
         thumbnail_default_height: default_thumbnail_height(),
         thumbnail_enabled: default_thumbnail_enabled(),
         thumbnail_opacity: crate::common::constants::defaults::thumbnail::OPACITY_PERCENT,
         thumbnail_active_border: crate::common::constants::defaults::border::ENABLED,
         thumbnail_active_border_size: crate::common::constants::defaults::border::SIZE,
-        thumbnail_active_border_color: crate::common::constants::defaults::border::ACTIVE_COLOR.to_string(),
+        thumbnail_active_border_color: crate::common::constants::defaults::border::ACTIVE_COLOR
+            .to_string(),
         thumbnail_inactive_border: default_inactive_border_enabled(),
         thumbnail_inactive_border_size: crate::common::constants::defaults::border::SIZE,
         thumbnail_inactive_border_color: default_inactive_border_color(),
@@ -276,14 +278,17 @@ fn default_profiles() -> Vec<Profile> {
         thumbnail_text_color: crate::common::constants::defaults::text::COLOR.to_string(),
         thumbnail_auto_save_position: default_auto_save_thumbnail_positions(),
         thumbnail_snap_threshold: default_snap_threshold(),
-        thumbnail_hide_not_focused: crate::common::constants::defaults::behavior::HIDE_WHEN_NO_FOCUS,
+        thumbnail_hide_not_focused:
+            crate::common::constants::defaults::behavior::HIDE_WHEN_NO_FOCUS,
         thumbnail_preserve_position_on_swap: default_preserve_thumbnail_position_on_swap(),
-        client_minimize_on_switch: crate::common::constants::defaults::behavior::MINIMIZE_CLIENTS_ON_SWITCH,
+        client_minimize_on_switch:
+            crate::common::constants::defaults::behavior::MINIMIZE_CLIENTS_ON_SWITCH,
         client_minimize_show_overlay: false, // Default: off (clean minimized look)
         hotkey_backend: default_hotkey_backend(), // Default: X11 (secure, no permissions)
         hotkey_input_device: None, // Default: no device selected (only used by evdev backend)
         hotkey_logged_out_cycle: false, // Default: off
-        hotkey_require_eve_focus: crate::common::constants::defaults::behavior::HOTKEY_REQUIRE_EVE_FOCUS,
+        hotkey_require_eve_focus:
+            crate::common::constants::defaults::behavior::HOTKEY_REQUIRE_EVE_FOCUS,
         hotkey_profile_switch: None,
         hotkey_toggle_skip: None,     // User must configure
         hotkey_toggle_previews: None, // User must configure

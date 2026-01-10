@@ -14,7 +14,10 @@ pub enum ConfigMessage {
 #[derive(Debug, Serialize, Deserialize)]
 pub enum DaemonMessage {
     /// Log message from daemon
-    Log { level: String, message: String },
+    Log {
+        level: String,
+        message: String,
+    },
     /// New character window detected
     CharacterDetected(String),
     /// Character thumbnail position changed (dragged)

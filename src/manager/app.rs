@@ -11,8 +11,8 @@ use tracing::{error, info};
 use ksni::TrayMethods;
 
 use super::components;
-use crate::config::profile::Config;
 use crate::common::constants::gui::*;
+use crate::config::profile::Config;
 use crate::manager::components::profile_selector::{ProfileAction, ProfileSelector};
 #[cfg(target_os = "linux")]
 use crate::manager::components::tray::AppTray;

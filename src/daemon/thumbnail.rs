@@ -8,9 +8,9 @@ use tracing::info;
 use x11rb::protocol::damage::Damage;
 use x11rb::protocol::xproto::{ConnectionExt, Window};
 
-use crate::config::DisplayConfig;
 use crate::common::constants::positioning;
 use crate::common::types::{Dimensions, Position, ThumbnailState};
+use crate::config::DisplayConfig;
 use crate::x11::AppContext;
 
 use super::font::FontRenderer;

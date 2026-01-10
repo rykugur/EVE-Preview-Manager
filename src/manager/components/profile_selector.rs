@@ -1,5 +1,5 @@
-use crate::config::profile::{Config, Profile};
 use crate::common::constants::gui::*;
+use crate::config::profile::{Config, Profile};
 use eframe::egui;
 
 pub struct ProfileSelector {

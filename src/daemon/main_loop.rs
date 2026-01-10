@@ -10,10 +10,10 @@ use x11rb::connection::Connection;
 use x11rb::protocol::damage::ConnectionExt as DamageExt;
 use x11rb::protocol::xproto::*;
 
-use crate::config::DaemonConfig;
 use crate::common::constants::eve;
-use crate::input::listener::{self, CycleCommand, TimestampedCommand};
 use crate::common::ipc::{BootstrapMessage, ConfigMessage, DaemonMessage};
+use crate::config::DaemonConfig;
+use crate::input::listener::{self, CycleCommand, TimestampedCommand};
 use crate::x11::{AppContext, CachedAtoms, activate_window, minimize_window};
 use ipc_channel::ipc::{self, IpcReceiver, IpcSender};
 

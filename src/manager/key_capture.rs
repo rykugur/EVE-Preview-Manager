@@ -8,8 +8,8 @@ use std::thread;
 use std::time::Duration;
 use tracing::{debug, info, warn};
 
-use crate::config::{HotkeyBackendType, HotkeyBinding};
 use crate::common::constants::{input, paths, permissions};
+use crate::config::{HotkeyBackendType, HotkeyBinding};
 use crate::input::device_detection;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{ConnectionExt, GrabMode, KeyButMask};

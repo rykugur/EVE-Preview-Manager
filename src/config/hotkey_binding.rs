@@ -181,7 +181,13 @@ impl HotkeyBinding {
 impl Default for HotkeyBinding {
     fn default() -> Self {
         // Default to Tab key with no modifiers
-        Self::new(crate::common::constants::input::KEY_TAB, false, false, false, false)
+        Self::new(
+            crate::common::constants::input::KEY_TAB,
+            false,
+            false,
+            false,
+            false,
+        )
     }
 }
 

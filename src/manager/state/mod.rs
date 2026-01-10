@@ -2,8 +2,8 @@ use std::process::Child;
 use std::sync::mpsc::Receiver;
 use std::time::Instant;
 
-use crate::config::profile::Config;
 use crate::common::ipc::{BootstrapMessage, ConfigMessage, DaemonMessage};
+use crate::config::profile::Config;
 use ipc_channel::ipc::{IpcReceiver, IpcSender};
 
 pub mod config;

@@ -1,10 +1,10 @@
 use anyhow::{Context, Result};
 use tracing::{error, info};
 
-use crate::config::DaemonConfig;
-use crate::config::profile::Config;
 use crate::common::constants::gui::*;
 use crate::common::ipc::ConfigMessage;
+use crate::config::DaemonConfig;
+use crate::config::profile::Config;
 
 use super::SharedState;
 use super::StatusMessage;

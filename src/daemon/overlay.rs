@@ -9,9 +9,9 @@ use x11rb::protocol::xproto::{
 };
 use x11rb::rust_connection::RustConnection;
 
-use crate::config::DisplayConfig;
 use crate::common::constants::x11;
 use crate::common::types::Dimensions;
+use crate::config::DisplayConfig;
 
 use super::font::FontRenderer;
 

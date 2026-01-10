@@ -1,5 +1,5 @@
-use crate::config::profile::Profile;
 use crate::common::constants::gui::*;
+use crate::config::profile::Profile;
 use eframe::egui;
 
 mod editor;

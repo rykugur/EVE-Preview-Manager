@@ -1,8 +1,8 @@
 //! Hotkey settings component for profile configuration
 
+use crate::common::constants::gui::*;
 use crate::config::HotkeyBackendType;
 use crate::config::profile::Profile;
-use crate::common::constants::gui::*;
 use crate::manager::key_capture::{self, CaptureResult, CaptureState};
 use eframe::egui;
 use std::sync::mpsc::Receiver;

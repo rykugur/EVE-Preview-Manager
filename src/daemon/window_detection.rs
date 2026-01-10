@@ -5,11 +5,11 @@ use tracing::{debug, info};
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::*;
 
+use crate::common::constants;
+use crate::common::types::Dimensions;
 use crate::config::DaemonConfig;
 use crate::config::DisplayConfig;
 use crate::config::profile::CustomWindowRule;
-use crate::common::constants;
-use crate::common::types::Dimensions;
 use crate::x11::{AppContext, get_window_class, is_window_eve, is_window_minimized};
 use std::collections::HashMap;
 
@@ -256,7 +256,10 @@ pub fn check_and_create_window<'a>(
             // Auto-detect EVE default
             let (w, h) = daemon_config
                 .default_thumbnail_size(ctx.screen.width_in_pixels, ctx.screen.height_in_pixels);
-            (Dimensions::new(w, h), crate::common::types::PreviewMode::default())
+            (
+                Dimensions::new(w, h),
+                crate::common::types::PreviewMode::default(),
+            )
         }
     };
 
