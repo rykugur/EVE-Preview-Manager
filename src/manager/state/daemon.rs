@@ -119,7 +119,7 @@ impl SharedState {
             });
 
             // Sync config to daemon
-            let _ = self.save_config();
+            let _ = self.sync_to_daemon();
 
             self.bootstrap_rx = None; // Done
             self.daemon_status = DaemonStatus::Running;

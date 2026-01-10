@@ -71,11 +71,7 @@ impl SharedState {
         }
     }
 
-    pub fn save_config(&mut self) -> Result<()> {
-        // Write current state to disk - Manager maintains authoritative state via IPC synchronization
-        self.config.save()?;
-
-        // Sync with daemon via IPC
+    pub fn sync_to_daemon(&self) -> Result<()> {
         if let Some(ref tx) = self.ipc_config_tx {
             let selected_profile = self
                 .config
@@ -119,10 +115,20 @@ impl SharedState {
 
             if let Err(e) = tx.send(ConfigMessage::Update(daemon_config)) {
                 error!(error = %e, "Failed to send config update to daemon");
+                return Err(anyhow::anyhow!("Failed to send config to daemon: {}", e));
             } else {
                 info!("Sent config update to daemon");
             }
         }
+        Ok(())
+    }
+
+    pub fn save_config(&mut self) -> Result<()> {
+        // Write current state to disk - Manager maintains authoritative state via IPC synchronization
+        self.config.save()?;
+
+        // Sync with daemon via IPC
+        self.sync_to_daemon()?;
 
         // Re-sync selected_profile_idx with the potentially reloaded profile list
         self.selected_profile_idx = self
