@@ -88,7 +88,7 @@ pub fn load_window_icon() -> Result<egui::IconData> {
 pub fn spawn_preview_daemon(ipc_server_name: &str) -> Result<Child> {
     let exe_path = std::env::current_exe().context("Failed to resolve executable path")?;
     Command::new(exe_path)
-        .arg("--preview")
+        .arg("daemon")
         .arg("--ipc-server")
         .arg(ipc_server_name)
         .spawn()

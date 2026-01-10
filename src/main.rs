@@ -17,13 +17,19 @@ use tracing_subscriber::FmtSubscriber;
 #[command(version)]
 #[command(about = "EVE Online window preview manager", long_about = None)]
 struct Cli {
-    /// Run in preview daemon mode (background process showing thumbnails)
-    #[arg(long)]
-    preview: bool,
+    #[command(subcommand)]
+    command: Option<Commands>,
+}
 
-    /// Name of the IPC server to connect to for configuration and status updates
-    #[arg(long)]
-    ipc_server: Option<String>,
+#[derive(clap::Subcommand)]
+enum Commands {
+    /// Internal: Run in preview daemon mode (background process)
+    #[command(hide = true)]
+    Daemon {
+        /// Name of the IPC server to connect to for configuration and status updates
+        #[arg(long)]
+        ipc_server: String,
+    },
 }
 
 fn main() -> Result<()> {
@@ -35,24 +41,25 @@ fn main() -> Result<()> {
 
     let cli = Cli::parse();
 
-    if cli.preview {
-        // Start the dedicated preview process to isolate X11 rendering and overlay management
-        // Initialize Tokio runtime for the daemon
-        let rt = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .expect("Failed to build Tokio runtime");
+    match cli.command {
+        Some(Commands::Daemon { ipc_server }) => {
+            // Start the dedicated preview process to isolate X11 rendering and overlay management
+            // Initialize Tokio runtime for the daemon
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .expect("Failed to build Tokio runtime");
 
-        rt.block_on(async {
-            if let Some(server_name) = cli.ipc_server {
-                daemon::run_preview_daemon(server_name).await
-            } else {
-                eprintln!("Error: --ipc-server is required for preview daemon mode");
-                std::process::exit(1);
-            }
-        })
-    } else {
-        // Default mode: launch the configuration GUI which manages the daemon lifecycle
-        manager::run_gui()
+            rt.block_on(async {
+                if let Err(e) = daemon::run_preview_daemon(ipc_server).await {
+                    eprintln!("Daemon error: {e}");
+                }
+            });
+            Ok(())
+        }
+        None => {
+            // Default mode: launch the configuration GUI which manages the daemon lifecycle
+            manager::run_gui()
+        }
     }
 }
