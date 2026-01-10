@@ -362,7 +362,7 @@ async fn run_event_loop(
             _ = heartbeat_interval.tick() => {
                 if let Err(e) = status_tx.send(DaemonMessage::Heartbeat) {
                     error!(error = %e, "Failed to send heartbeat to Manager");
-                    // If we can't send heartbeat, manager might be dead. 
+                    // If we can't send heartbeat, manager might be dead.
                     // We'll let the IPC config channel failure handle termination.
                 }
             }
