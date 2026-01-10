@@ -39,12 +39,11 @@ pub fn log_system_info() {
         let parse_memory_gb = |line: &str, prefix: &str| -> Option<f64> {
             let value_str = line.strip_prefix(prefix)?.trim();
             // Expected format: "16386456 kB"
-            if let Some(kb_str) = value_str.split_whitespace().next() {
-                if let Ok(kb) = kb_str.parse::<u64>() {
-                    return Some(kb as f64 / 1024.0 / 1024.0);
-                }
-            }
-            None
+            value_str
+                .split_whitespace()
+                .next()
+                .and_then(|kb_str| kb_str.parse::<u64>().ok())
+                .map(|kb| kb as f64 / 1024.0 / 1024.0)
         };
 
         let mut total_gb = None;
