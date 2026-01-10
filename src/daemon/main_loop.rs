@@ -458,110 +458,7 @@ async fn run_event_loop(
                         );
                     }
 
-                    // Build logged-out map if feature is enabled in profile
-                    let logged_out_map = if resources.config.profile.hotkey_logged_out_cycle {
-                        Some(&resources.session.window_last_character)
-                    } else {
-                        None
-                    };
-
-                    let result = match command {
-                        CycleCommand::Forward(ref group) => resources.cycle.cycle_forward(group, logged_out_map)
-                            .map(|(w, s)| (w, s.to_string())),
-                        CycleCommand::Backward(ref group) => resources.cycle.cycle_backward(group, logged_out_map)
-                            .map(|(w, s)| (w, s.to_string())),
-                        CycleCommand::CharacterHotkey(ref binding) => {
-                            debug!(
-                                binding = %binding.display_name(),
-                                "Received per-character hotkey command"
-                            );
-
-                            // Find the group of characters sharing this hotkey
-                            if let Some(char_group) = hotkey_groups.get(binding) {
-                                debug!(
-                                    binding = %binding.display_name(),
-                                    group = ?char_group,
-                                    "Found hotkey group"
-                                );
-
-                                // Delegate logic to CycleState
-                                resources.cycle.activate_next_in_group(char_group, logged_out_map)
-                            } else {
-                                warn!(
-                                    binding = %binding.display_name(),
-                                    available_groups = hotkey_groups.len(),
-                                    "Character hotkey binding not found in groups - this shouldn't happen!"
-                                );
-                                None
-                            }
-                        }
-                        CycleCommand::ProfileHotkey(ref binding) => {
-                             info!(binding = %binding.display_name(), "Received profile switch hotkey");
-
-                             if let Some(profile_name) = resources.config.profile_hotkeys.get(binding) {
-                                 info!(target_profile = %profile_name, "Requesting profile switch via IPC");
-                                 if let Err(e) = status_tx.send(DaemonMessage::RequestProfileSwitch(profile_name.clone())) {
-                                     error!(error = %e, "Failed to send profile switch request to Manager");
-                                 }
-                             }
-                             None
-                        }
-                        CycleCommand::ToggleSkip => {
-                            // Identify focused window to determine which character to skip
-                            let active_window = crate::x11::get_active_eve_window(ctx.conn, ctx.screen, ctx.atoms)
-                                .ok()
-                                .flatten();
-
-                            if let Some(window) = active_window {
-                                if let Some(thumbnail) = resources.eve_clients.get_mut(&window) {
-                                    let char_name = thumbnail.character_name.clone();
-                                    let is_skipped = resources.cycle.toggle_skip(&char_name);
-                                    info!(character = %char_name, skipped = is_skipped, "Toggled skip status");
-
-                                    // Force redraw of border to show/hide indicator
-                                    let focused = thumbnail.state.is_focused();
-                                    let display_config = resources.config.build_display_config();
-                                    if let Err(e) = thumbnail.border(&display_config, focused, is_skipped, &font_renderer) {
-                                         warn!(character = %char_name, error = %e, "Failed to update border after toggle skip");
-                                    }
-                                } else {
-                                    warn!("Focused EVE window not found in client list");
-                                }
-                            } else {
-                                warn!("Cannot toggle skip: No EVE window focused");
-                            }
-                            None
-                        }
-                        CycleCommand::TogglePreviews => {
-                             resources.config.runtime_hidden = !resources.config.runtime_hidden;
-                             info!(hidden = resources.config.runtime_hidden, "Toggled previews visibility");
-
-                             // Force visibility update for all known thumbnails
-                             for thumbnail in resources.eve_clients.values_mut() {
-                                 // If hidden globally, hide. If visible globally, use 'visibility(true)' which reveals IF NOT hidden by other means
-                                 // Actually 'visibility(bool)' sets the 'hidden' state.
-                                 // Logic:
-                                 // if runtime_hidden is TRUE, we must hide.
-                                 // if runtime_hidden is FALSE, we reveal (but individual hides might still apply if we had per-thumbnail hiding, which we sort of do with 'hide_when_no_focus')
-
-                                 // Using !runtime_hidden ensures we hide when true, and show when false.
-                                 // However, handle_focus logic might fight this if not careful.
-                                 // We rely on visibility() doing the right X11 map/unmap.
-                                 if let Err(e) = thumbnail.visibility(!resources.config.runtime_hidden) {
-                                     warn!(character = %thumbnail.character_name, error = %e, "Failed to update visibility after toggle");
-                                 } else {
-                                     // Force update to ensure content is drawn if revealed
-                                     if !resources.config.runtime_hidden {
-                                         let display_config = resources.config.build_display_config();
-                                         let _ = thumbnail.update(&display_config, &font_renderer);
-                                     }
-                                 }
-                             }
-                             None
-                        }
-                    };
-
-                    if let Some((window, character_name)) = result {
+                    if let Some((window, character_name)) = handle_cycle_command(&command, &mut resources, &ctx, &font_renderer, &status_tx, &hotkey_groups) {
                         let display_name = if character_name.is_empty() {
                             eve::LOGGED_OUT_DISPLAY_NAME
                         } else {
@@ -594,11 +491,13 @@ async fn run_event_loop(
                         }
                     } else {
                          // Simplify logging to avoid iterating all groups for a warn message
-                        warn!("No window to activate via hotkey");
+                        warn!("No window to activate via hotkey (or command handled internally)");
                     }
                 } else {
                     info!(hotkey_require_eve_focus = resources.config.profile.hotkey_require_eve_focus, "Hotkey ignored, EVE window not focused (hotkey_require_eve_focus enabled)");
                 }
+
+
             }
 
             // 3. Handle X11 Events Check
@@ -766,4 +665,120 @@ pub async fn run_daemon(ipc_server_name: String) -> Result<()> {
         status_tx,
     )
     .await
+}
+
+fn handle_cycle_command(
+    command: &CycleCommand,
+    resources: &mut DaemonResources<'_>,
+    ctx: &AppContext<'_>,
+    font_renderer: &crate::daemon::font::FontRenderer,
+    status_tx: &IpcSender<DaemonMessage>,
+    hotkey_groups: &HashMap<crate::config::HotkeyBinding, Vec<String>>,
+) -> Option<(Window, String)> {
+    // Build logged-out map if feature is enabled in profile
+    let logged_out_map = if resources.config.profile.hotkey_logged_out_cycle {
+        Some(&resources.session.window_last_character)
+    } else {
+        None
+    };
+
+    match command {
+        CycleCommand::Forward(group) => resources
+            .cycle
+            .cycle_forward(group, logged_out_map)
+            .map(|(w, s)| (w, s.to_string())),
+        CycleCommand::Backward(group) => resources
+            .cycle
+            .cycle_backward(group, logged_out_map)
+            .map(|(w, s)| (w, s.to_string())),
+        CycleCommand::CharacterHotkey(binding) => {
+            debug!(
+                binding = %binding.display_name(),
+                "Received per-character hotkey command"
+            );
+
+            // Find the group of characters sharing this hotkey
+            if let Some(char_group) = hotkey_groups.get(binding) {
+                debug!(
+                    binding = %binding.display_name(),
+                    group = ?char_group,
+                    "Found hotkey group"
+                );
+
+                // Delegate logic to CycleState
+                resources
+                    .cycle
+                    .activate_next_in_group(char_group, logged_out_map)
+            } else {
+                warn!(
+                    binding = %binding.display_name(),
+                    available_groups = hotkey_groups.len(),
+                    "Character hotkey binding not found in groups - this shouldn't happen!"
+                );
+                None
+            }
+        }
+        CycleCommand::ProfileHotkey(binding) => {
+            info!(binding = %binding.display_name(), "Received profile switch hotkey");
+
+            if let Some(profile_name) = resources.config.profile_hotkeys.get(binding) {
+                info!(target_profile = %profile_name, "Requesting profile switch via IPC");
+                if let Err(e) =
+                    status_tx.send(DaemonMessage::RequestProfileSwitch(profile_name.clone()))
+                {
+                    error!(error = %e, "Failed to send profile switch request to Manager");
+                }
+            }
+            None
+        }
+        CycleCommand::ToggleSkip => {
+            // Identify focused window to determine which character to skip
+            let active_window = crate::x11::get_active_eve_window(ctx.conn, ctx.screen, ctx.atoms)
+                .ok()
+                .flatten();
+
+            if let Some(window) = active_window {
+                if let Some(thumbnail) = resources.eve_clients.get_mut(&window) {
+                    let char_name = thumbnail.character_name.clone();
+                    let is_skipped = resources.cycle.toggle_skip(&char_name);
+                    info!(character = %char_name, skipped = is_skipped, "Toggled skip status");
+
+                    // Force redraw of border to show/hide indicator
+                    let focused = thumbnail.state.is_focused();
+                    let display_config = resources.config.build_display_config();
+                    if let Err(e) =
+                        thumbnail.border(&display_config, focused, is_skipped, font_renderer)
+                    {
+                        warn!(character = %char_name, error = %e, "Failed to update border after toggle skip");
+                    }
+                } else {
+                    warn!("Focused EVE window not found in client list");
+                }
+            } else {
+                warn!("Cannot toggle skip: No EVE window focused");
+            }
+            None
+        }
+        CycleCommand::TogglePreviews => {
+            resources.config.runtime_hidden = !resources.config.runtime_hidden;
+            info!(
+                hidden = resources.config.runtime_hidden,
+                "Toggled previews visibility"
+            );
+
+            // Force visibility update for all known thumbnails
+            for thumbnail in resources.eve_clients.values_mut() {
+                if let Err(e) = thumbnail.visibility(!resources.config.runtime_hidden) {
+                    warn!(character = %thumbnail.character_name, error = %e, "Failed to update visibility after toggle");
+                } else {
+                    // Force update to ensure content is drawn if revealed
+                    if !resources.config.runtime_hidden {
+                        let display_config = resources.config.build_display_config();
+                        let _ = thumbnail.update(&display_config, font_renderer);
+                    }
+                }
+            }
+            None
+        }
+    }
 }
