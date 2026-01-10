@@ -45,13 +45,17 @@ impl BackupManager {
             fs::create_dir_all(&backup_dir).context("Failed to create backup directory")?;
         }
 
-        // Generate filename: config_backup_[manual_]YYYYMMDD_HHMMSS.tar.gz
+        // Generate filename: [auto|manual]_backup_YYYYMMDD_HHMMSS.tar.gz
         let now = SystemTime::now();
         let datetime: chrono::DateTime<chrono::Local> = now.into();
-        let timestamp_str = datetime.format("%Y%m%d_%H%M%S_%3f").to_string();
+        let timestamp_str = datetime.format("%Y%m%d_%H%M%S").to_string();
 
-        let prefix = if is_manual { "manual_" } else { "" };
-        let filename = format!("config_backup_{}{}.tar.gz", prefix, timestamp_str);
+        let prefix = if is_manual {
+            "manual_backup"
+        } else {
+            "auto_backup"
+        };
+        let filename = format!("{}_{}.tar.gz", prefix, timestamp_str);
         let backup_path = backup_dir.join(&filename);
 
         // Create tar.gz archive
@@ -101,7 +105,7 @@ impl BackupManager {
                 let timestamp = metadata.modified().unwrap_or(SystemTime::now());
                 let filename = entry.file_name().to_string_lossy().to_string();
 
-                let is_manual = filename.contains("_manual_");
+                let is_manual = filename.contains("manual");
 
                 backups.push(BackupEntry {
                     filename,
@@ -230,12 +234,12 @@ mod tests {
         // 1. Test Creation
         let backup_path = BackupManager::create_backup(false).unwrap();
         assert!(backup_path.exists());
-        assert!(backup_path.to_string_lossy().contains("config_backup_"));
+        assert!(backup_path.to_string_lossy().contains("auto_backup_"));
         assert!(!backup_path.to_string_lossy().contains("manual"));
 
         // Manual backup
         let manual_backup = BackupManager::create_backup(true).unwrap();
-        assert!(manual_backup.to_string_lossy().contains("manual_"));
+        assert!(manual_backup.to_string_lossy().contains("manual_backup_"));
 
         // 2. Test Listing
         let list = BackupManager::list_backups().unwrap();
@@ -257,9 +261,10 @@ mod tests {
         // Create a few more dummy backups
         // Note: files created too fast might have same timestamp, but prune depends on list order
         // To ensure they are treated as "old", we can just rely on the count since we just made them.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
         for _ in 0..5 {
             BackupManager::create_backup(false).unwrap();
-            std::thread::sleep(std::time::Duration::from_millis(10));
+            std::thread::sleep(std::time::Duration::from_millis(1100));
         }
         let list_before = BackupManager::list_backups().unwrap();
         // Total: 2 initial (1 manual, 1 auto) + 5 new auto = 7 total. 6 auto.
