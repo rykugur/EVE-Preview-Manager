@@ -1,8 +1,8 @@
-use crate::common::constants::gui::*;
+use crate::common::constants::manager_ui::*;
 use eframe::egui;
 
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
-pub enum GuiTab {
+pub enum ManagerTab {
     Behavior,
     Appearance,
     Hotkeys,
@@ -29,12 +29,12 @@ impl DaemonStatus {
 
     pub fn label(&self) -> String {
         match self {
-            DaemonStatus::Running => "Preview daemon running".to_string(),
-            DaemonStatus::Starting => "Preview daemon starting...".to_string(),
-            DaemonStatus::Stopped => "Preview daemon stopped".to_string(),
+            DaemonStatus::Running => "Daemon running".to_string(),
+            DaemonStatus::Starting => "Daemon starting...".to_string(),
+            DaemonStatus::Stopped => "Daemon stopped".to_string(),
             DaemonStatus::Crashed(code) => match code {
-                Some(code) => format!("Preview daemon crashed (exit {code})"),
-                None => "Preview daemon crashed".to_string(),
+                Some(code) => format!("Daemon crashed (exit {code})"),
+                None => "Daemon crashed".to_string(),
             },
         }
     }

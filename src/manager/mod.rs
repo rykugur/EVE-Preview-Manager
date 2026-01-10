@@ -7,4 +7,4 @@ pub mod state;
 pub mod utils;
 pub mod x11_utils;
 
-pub use app::run_gui;
+pub use app::run_manager;

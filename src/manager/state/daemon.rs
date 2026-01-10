@@ -4,7 +4,7 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
-use crate::common::constants::gui::*;
+use crate::common::constants::manager_ui::*;
 use crate::common::ipc::{BootstrapMessage, DaemonMessage};
 use crate::config::profile::SaveStrategy;
 use crate::manager::utils::spawn_daemon;
@@ -27,7 +27,7 @@ impl SharedState {
         let pid = child.id();
         info!(pid, server_name = %server_name, "Started daemon process");
 
-        // 3. Spawn thread to wait for connection (avoid blocking GUI)
+        // 3. Spawn thread to wait for connection (avoid blocking Manager)
         let (tx, rx) = mpsc::channel();
         self.bootstrap_rx = Some(rx);
 

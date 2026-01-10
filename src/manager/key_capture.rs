@@ -27,7 +27,7 @@ pub enum CaptureResult {
     Error(String),
 }
 
-/// Key capture state for GUI display
+/// Key capture state for Manager display
 #[derive(Debug, Clone, PartialEq)]
 pub struct CaptureState {
     /// Currently detected modifiers (live feedback)

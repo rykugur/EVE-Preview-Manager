@@ -23,7 +23,7 @@ struct Cli {
 
 #[derive(clap::Subcommand)]
 enum Commands {
-    /// Internal: Run in preview daemon mode (background process)
+    /// Internal: Run in daemon mode (background process)
     #[command(hide = true)]
     Daemon {
         /// Name of the IPC server to connect to for configuration and status updates
@@ -43,7 +43,7 @@ fn main() -> Result<()> {
 
     match cli.command {
         Some(Commands::Daemon { ipc_server }) => {
-            // Start the dedicated preview process to isolate X11 rendering and overlay management
+            // Start the dedicated daemon process to isolate X11 rendering and overlay management
             // Initialize Tokio runtime for the daemon
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
@@ -58,8 +58,8 @@ fn main() -> Result<()> {
             Ok(())
         }
         None => {
-            // Default mode: launch the configuration GUI which manages the daemon lifecycle
-            manager::run_gui()
+            // Default mode: launch the configuration Manager which manages the daemon lifecycle
+            manager::run_manager()
         }
     }
 }

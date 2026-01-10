@@ -12,7 +12,7 @@ pub mod types;
 
 pub use types::*;
 
-// Core application state shared between GUI and Tray
+// Core application state shared between Manager and Tray
 pub struct SharedState {
     pub config: Config,
     pub daemon: Option<Child>,

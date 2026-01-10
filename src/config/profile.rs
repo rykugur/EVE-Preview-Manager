@@ -1,4 +1,4 @@
-//! Profile-based configuration for the GUI manager
+//! Profile-based configuration for the Manager
 //!
 //! Supports multiple profiles, each containing visual settings (opacity, border, text),
 //! hotkey bindings, and per-character thumbnail positions.
@@ -67,7 +67,7 @@ pub enum HotkeyBackendType {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SaveStrategy {
     /// Load existing config from disk and preserve its character positions/dimensions
-    /// Used by GUI when saving general settings to avoid overwriting daemon's position updates
+    /// Used by Manager when saving general settings to avoid overwriting daemon's position updates
     Preserve,
     /// Overwrite disk config cleanly with current state
     /// Used when we know we have the full authoritative state
@@ -399,19 +399,19 @@ impl Config {
                         {
                             // Profile exists on disk
                             // Merge strategy:
-                            // 1. For characters in BOTH: keep GUI settings (overrides), update positions from Disk
-                            // 2. For characters ONLY in Disk: add to GUI (newly discovered by daemon)
+                            // 1. For characters in BOTH: keep Manager settings (overrides), update positions from Disk
+                            // 2. For characters ONLY in Disk: add to Manager (newly discovered by daemon)
 
                             for (char_name, disk_settings) in &existing_profile.character_thumbnails
                             {
-                                if let Some(gui_settings) =
+                                if let Some(manager_settings) =
                                     profile_to_save.character_thumbnails.get_mut(char_name)
                                 {
-                                    // Found in both: update position/dim from disk, keep GUI overrides
-                                    gui_settings.x = disk_settings.x;
-                                    gui_settings.y = disk_settings.y;
-                                    // Don't overwrite dimensions - GUI state is authoritative (it updates from disk via polling, but allows user overrides)
-                                    // gui_settings.dimensions = disk_settings.dimensions;
+                                    // Found in both: update position/dim from disk, keep Manager overrides
+                                    manager_settings.x = disk_settings.x;
+                                    manager_settings.y = disk_settings.y;
+                                    // Don't overwrite dimensions - Manager state is authoritative (it updates from disk via polling, but allows user overrides)
+                                    // manager_settings.dimensions = disk_settings.dimensions;
                                 }
                                 // If they are valid new windows found by the daemon, the daemon will re-add them
                                 // to the config on its next pass/save cycle. This fixes the "zombie character" bug.
@@ -421,12 +421,12 @@ impl Config {
                             for (source_name, disk_settings) in
                                 &existing_profile.custom_source_thumbnails
                             {
-                                if let Some(gui_settings) = profile_to_save
+                                if let Some(manager_settings) = profile_to_save
                                     .custom_source_thumbnails
                                     .get_mut(source_name)
                                 {
-                                    gui_settings.x = disk_settings.x;
-                                    gui_settings.y = disk_settings.y;
+                                    manager_settings.x = disk_settings.x;
+                                    manager_settings.y = disk_settings.y;
                                     // Dimension updates logic mirrors characters
                                 }
                             }
@@ -448,7 +448,7 @@ impl Config {
         Ok(())
     }
 
-    /// Convenience helper: save preserving character positions (GUI default)
+    /// Convenience helper: save preserving character positions (Manager default)
     pub fn save(&self) -> Result<()> {
         self.save_with_strategy(SaveStrategy::Preserve)
     }

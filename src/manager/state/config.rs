@@ -1,7 +1,7 @@
 use anyhow::{Context, Result};
 use tracing::{error, info};
 
-use crate::common::constants::gui::*;
+use crate::common::constants::manager_ui::*;
 use crate::common::ipc::ConfigMessage;
 use crate::config::DaemonConfig;
 use crate::config::profile::Config;
@@ -14,26 +14,24 @@ impl SharedState {
         // Load fresh config from disk (has all characters including daemon's additions)
         let disk_config = Config::load().unwrap_or_else(|_| self.config.clone());
 
-        // Merge strategy: Start with GUI's profile list (handles deletions), merge character positions from disk
+        // Merge strategy: Start with Manager's profile list (handles deletions), merge character positions from disk
         let mut merged_profiles = Vec::new();
 
-        for gui_profile in &self.config.profiles {
-            let mut merged_profile = gui_profile.clone();
+        for profile in &self.config.profiles {
+            let mut merged_profile = profile.clone();
 
             // Find matching profile in disk config to get daemon's character positions
             if let Some(disk_profile) = disk_config
                 .profiles
                 .iter()
-                .find(|p| p.profile_name == gui_profile.profile_name)
+                .find(|p| p.profile_name == profile.profile_name)
             {
-                // Merge character positions: start with GUI's, add disk characters, preserve disk positions
+                // Merge character positions: start with Manager's, add disk characters, preserve disk positions
                 for (char_name, disk_settings) in &disk_profile.character_thumbnails {
-                    if let Some(gui_settings) =
-                        merged_profile.character_thumbnails.get_mut(char_name)
-                    {
-                        // Character exists in both: keep GUI dimensions, use disk position (x, y)
-                        gui_settings.x = disk_settings.x;
-                        gui_settings.y = disk_settings.y;
+                    if let Some(settings) = merged_profile.character_thumbnails.get_mut(char_name) {
+                        // Character exists in both: keep Manager dimensions, use disk position (x, y)
+                        settings.x = disk_settings.x;
+                        settings.y = disk_settings.y;
                     }
                 }
             }
@@ -41,7 +39,7 @@ impl SharedState {
             merged_profiles.push(merged_profile);
         }
 
-        // Build final config with merged profiles and GUI's global settings
+        // Build final config with merged profiles and Manager's global settings
         let final_config = Config {
             profiles: merged_profiles,
             global: self.config.global.clone(),

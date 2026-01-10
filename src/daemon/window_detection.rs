@@ -87,7 +87,7 @@ pub fn identify_window(
         if rule.class_pattern.is_some() && !matches_class {
             matched = false;
         }
-        // If neither is defined, it's a catch-all? No, UI enforces at least one.
+        // If neither is defined, it's a catch-all? No, Manager enforces at least one.
         if rule.title_pattern.is_none() && rule.class_pattern.is_none() {
             matched = false;
         }

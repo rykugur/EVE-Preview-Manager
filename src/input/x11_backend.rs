@@ -318,18 +318,18 @@ fn run_x11_listener(
             let focused_class = get_window_class_sync(&conn, focused_window).unwrap_or_default();
             let is_epm_focused = focused_class.eq_ignore_ascii_case("eve-preview-manager");
 
-            // If EPM gained focus, ungrab hotkeys
+            // If Manager gained focus, ungrab hotkeys
             if is_epm_focused && hotkeys_grabbed {
-                info!("EPM gained focus, ungrabbing hotkeys to allow normal input");
+                info!("Manager gained focus, ungrabbing hotkeys to allow normal input");
                 for (keycode, modmask) in hotkey_map.keys() {
                     ungrab_hotkey(&conn, root, *keycode, *modmask)?;
                 }
                 hotkeys_grabbed = false;
                 conn.flush()?;
             }
-            // If EPM lost focus, regrab hotkeys
+            // If Manager lost focus, regrab hotkeys
             else if !is_epm_focused && !hotkeys_grabbed {
-                info!("EPM lost focus, re-grabbing hotkeys");
+                info!("Manager lost focus, re-grabbing hotkeys");
                 for (keycode, modmask) in hotkey_map.keys() {
                     register_hotkey(&conn, root, *keycode, *modmask)?;
                 }

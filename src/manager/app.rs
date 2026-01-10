@@ -11,12 +11,12 @@ use tracing::{error, info};
 use ksni::TrayMethods;
 
 use super::components;
-use crate::common::constants::gui::*;
+use crate::common::constants::manager_ui::*;
 use crate::config::profile::Config;
 use crate::manager::components::profile_selector::{ProfileAction, ProfileSelector};
 #[cfg(target_os = "linux")]
 use crate::manager::components::tray::AppTray;
-use crate::manager::state::{GuiTab, SharedState, StatusMessage};
+use crate::manager::state::{ManagerTab, SharedState, StatusMessage};
 use crate::manager::utils::load_window_icon;
 
 struct ManagerApp {
@@ -34,12 +34,12 @@ struct ManagerApp {
     #[cfg(target_os = "linux")]
     update_signal: std::sync::Arc<tokio::sync::Notify>,
 
-    active_tab: GuiTab,
+    active_tab: ManagerTab,
 }
 
 impl ManagerApp {
     fn new(cc: &eframe::CreationContext<'_>, config: Config) -> Self {
-        info!("Initializing egui manager");
+        info!("Initializing Manager");
 
         // Initialize SharedState
         let mut state = SharedState::new(config.clone());
@@ -139,7 +139,7 @@ impl ManagerApp {
             visual_settings_state,
             characters_state,
             sources_state: components::sources::SourcesTab::default(),
-            active_tab: GuiTab::Behavior,
+            active_tab: ManagerTab::Behavior,
         };
 
         #[cfg(not(target_os = "linux"))]
@@ -151,7 +151,7 @@ impl ManagerApp {
             visual_settings_state,
             characters_state,
             sources_state: components::sources::SourcesTab::default(),
-            active_tab: GuiTab::Behavior,
+            active_tab: ManagerTab::Behavior,
         };
 
         app
@@ -268,7 +268,7 @@ impl eframe::App for ManagerApp {
                 let current_profile = &mut state.config.profiles[state.selected_profile_idx];
 
                 match self.active_tab {
-                    GuiTab::Behavior => {
+                    ManagerTab::Behavior => {
                         if components::behavior_settings::ui(
                             ui,
                             current_profile,
@@ -278,7 +278,7 @@ impl eframe::App for ManagerApp {
                             state.config_status_message = None;
                         }
                     }
-                    GuiTab::Appearance => {
+                    ManagerTab::Appearance => {
                         if components::visual_settings::ui(
                             ui,
                             current_profile,
@@ -288,7 +288,7 @@ impl eframe::App for ManagerApp {
                             state.config_status_message = None;
                         }
                     }
-                    GuiTab::Hotkeys => {
+                    ManagerTab::Hotkeys => {
                         if components::hotkey_settings::ui(
                             ui,
                             current_profile,
@@ -298,7 +298,7 @@ impl eframe::App for ManagerApp {
                             state.config_status_message = None;
                         }
                     }
-                    GuiTab::Characters => {
+                    ManagerTab::Characters => {
                         if components::characters::ui(
                             ui,
                             current_profile,
@@ -309,7 +309,7 @@ impl eframe::App for ManagerApp {
                             state.config_status_message = None;
                         }
                     }
-                    GuiTab::Sources => {
+                    ManagerTab::Sources => {
                         if self.sources_state.ui(ui, current_profile) {
                             state.settings_changed = true;
                             state.config_status_message = None;
@@ -347,7 +347,7 @@ impl eframe::App for ManagerApp {
     }
 }
 
-pub fn run_gui() -> Result<()> {
+pub fn run_manager() -> Result<()> {
     // Load config to get window dimensions
     let config = Config::load().unwrap_or_default();
     let window_width = config.global.window_width as f32;
@@ -391,5 +391,5 @@ pub fn run_gui() -> Result<()> {
         options,
         Box::new(|cc| Ok(Box::new(ManagerApp::new(cc, config)))),
     )
-    .map_err(|err| anyhow!("Failed to launch egui manager: {err}"))
+    .map_err(|err| anyhow!("Failed to launch Manager: {err}"))
 }

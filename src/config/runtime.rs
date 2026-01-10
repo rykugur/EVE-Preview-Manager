@@ -145,7 +145,7 @@ impl DaemonConfig {
                 .insert(old_name.to_string(), settings);
         }
 
-        // NOTE: Refresh overrides from disk to respect external GUI changes (e.g. static mode).
+        // NOTE: Refresh overrides from disk to respect external Manager changes (e.g. static mode).
         // Memory holds the authoritative window position, but disk holds the authoritative user config.
         if !new_name.is_empty()
             && let Ok(disk_config) = crate::config::profile::Config::load()

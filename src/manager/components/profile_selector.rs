@@ -1,4 +1,4 @@
-use crate::common::constants::gui::*;
+use crate::common::constants::manager_ui::*;
 use crate::config::profile::{Config, Profile};
 use eframe::egui;
 

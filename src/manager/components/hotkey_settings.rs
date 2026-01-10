@@ -1,6 +1,6 @@
 //! Hotkey settings component for profile configuration
 
-use crate::common::constants::gui::*;
+use crate::common::constants::manager_ui::*;
 use crate::config::HotkeyBackendType;
 use crate::config::profile::Profile;
 use crate::manager::key_capture::{self, CaptureResult, CaptureState};
@@ -15,7 +15,7 @@ enum CaptureTarget {
     Character(String), // Character name for per-character hotkey
 }
 
-/// State for hotkey settings UI
+/// State for hotkey settings Manager
 pub struct HotkeySettingsState {
     // Input device state
     available_devices: Vec<(String, String)>, // (device_id, friendly_name)
@@ -34,7 +34,7 @@ pub struct HotkeySettingsState {
 
 impl HotkeySettingsState {
     pub fn new() -> Self {
-        // Load available input devices at GUI startup
+        // Load available input devices at Manager startup
         let (available_devices, device_load_error) = match crate::daemon::list_input_devices() {
             Ok(devices) => (devices, None),
             Err(e) => {
@@ -398,7 +398,7 @@ pub fn render_key_capture_modal(
     let mut changed = false;
 
     // Poll capture state updates if capture is active.
-    // We use channels to receive async updates from the capture thread without blocking the GUI.
+    // We use channels to receive async updates from the capture thread without blocking the Manager.
     if state.show_key_capture_dialog {
         // Check for final result first
         let mut got_result = false;

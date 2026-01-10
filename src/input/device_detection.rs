@@ -1,7 +1,7 @@
 //! Input device detection for keyboards and mice
 //!
 //! Provides unified device detection logic used by both the hotkey listener
-//! and the GUI key capture functionality.
+//! and the Manager key capture functionality.
 
 use anyhow::{Context, Result};
 use evdev::{Device, KeyCode};

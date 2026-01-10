@@ -1,5 +1,5 @@
 use super::CharactersState;
-use crate::common::constants::gui::*;
+use crate::common::constants::manager_ui::*;
 use crate::config::profile::Profile;
 use crate::manager::components::hotkey_settings::HotkeySettingsState;
 use eframe::egui;

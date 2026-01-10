@@ -1,4 +1,4 @@
-use crate::common::constants::gui::*;
+use crate::common::constants::manager_ui::*;
 use crate::common::types::Dimensions;
 use crate::config::profile::Profile;
 use eframe::egui;
@@ -17,7 +17,7 @@ pub struct VisualSettingsState {
 
 impl VisualSettingsState {
     pub fn new() -> Self {
-        // Load available fonts at GUI startup
+        // Load available fonts at Manager startup
         let (available_fonts, font_load_error) = match crate::daemon::list_fonts() {
             Ok(fonts) => (fonts, None),
             Err(e) => {

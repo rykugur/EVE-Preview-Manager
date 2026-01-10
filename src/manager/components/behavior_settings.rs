@@ -1,6 +1,6 @@
 //! Behavior settings component (per-profile settings)
 
-use crate::common::constants::gui::*;
+use crate::common::constants::manager_ui::*;
 use crate::config::profile::Profile;
 
 use eframe::egui;

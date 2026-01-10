@@ -104,8 +104,8 @@ pub mod config {
     pub const FILENAME: &str = "config.json";
 }
 
-/// GUI-specific constants (egui manager window)
-pub mod gui {
+/// Manager-specific constants (egui manager window)
+pub mod manager_ui {
     use egui;
 
     /// Layout spacing
@@ -129,12 +129,12 @@ pub mod gui {
 /// Default configuration values
 /// These are used when creating new profiles or missing config fields
 pub mod defaults {
-    /// GUI manager window settings
+    /// Manager window settings
     pub mod manager {
-        /// Default GUI window width in pixels
+        /// Default Manager window width in pixels
         pub const WINDOW_WIDTH: u16 = 700;
 
-        /// Default GUI window height in pixels
+        /// Default Manager window height in pixels
         pub const WINDOW_HEIGHT: u16 = 450;
     }
 

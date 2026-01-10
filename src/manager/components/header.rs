@@ -5,16 +5,16 @@ use std::sync::Arc;
 use tokio::sync::Notify;
 use tracing::error;
 
-use crate::common::constants::gui::*;
+use crate::common::constants::manager_ui::*;
 use crate::manager::components::profile_selector::{ProfileAction, ProfileSelector};
-use crate::manager::state::{GuiTab, SharedState, StatusMessage};
+use crate::manager::state::{ManagerTab, SharedState, StatusMessage};
 
 /// Renders the global header panel containing daemon status, tabs, and profile controls
 pub fn render(
     ctx: &egui::Context,
     ui: &mut egui::Ui,
     state: &mut SharedState,
-    active_tab: &mut GuiTab,
+    active_tab: &mut ManagerTab,
     profile_selector: &mut ProfileSelector,
     #[cfg(target_os = "linux")] update_signal: &Arc<Notify>,
 ) -> ProfileAction {
@@ -40,46 +40,50 @@ pub fn render(
 
             // 5. Sources
             if ui
-                .add(egui::Button::new("Sources").selected(*active_tab == GuiTab::Sources))
+                .add(egui::Button::new("Sources").selected(*active_tab == ManagerTab::Sources))
                 .clicked()
             {
-                *active_tab = GuiTab::Sources;
+                *active_tab = ManagerTab::Sources;
             }
             ui.add_space(5.0);
 
             // 4. Characters
             if ui
-                .add(egui::Button::new("Characters").selected(*active_tab == GuiTab::Characters))
+                .add(
+                    egui::Button::new("Characters").selected(*active_tab == ManagerTab::Characters),
+                )
                 .clicked()
             {
-                *active_tab = GuiTab::Characters;
+                *active_tab = ManagerTab::Characters;
             }
             ui.add_space(5.0);
 
             // 2. Appearance
             if ui
-                .add(egui::Button::new("Appearance").selected(*active_tab == GuiTab::Appearance))
+                .add(
+                    egui::Button::new("Appearance").selected(*active_tab == ManagerTab::Appearance),
+                )
                 .clicked()
             {
-                *active_tab = GuiTab::Appearance;
+                *active_tab = ManagerTab::Appearance;
             }
             ui.add_space(5.0);
 
             // 3. Hotkeys
             if ui
-                .add(egui::Button::new("Hotkeys").selected(*active_tab == GuiTab::Hotkeys))
+                .add(egui::Button::new("Hotkeys").selected(*active_tab == ManagerTab::Hotkeys))
                 .clicked()
             {
-                *active_tab = GuiTab::Hotkeys;
+                *active_tab = ManagerTab::Hotkeys;
             }
             ui.add_space(5.0);
 
             // 1. Behavior
             if ui
-                .add(egui::Button::new("Behavior").selected(*active_tab == GuiTab::Behavior))
+                .add(egui::Button::new("Behavior").selected(*active_tab == ManagerTab::Behavior))
                 .clicked()
             {
-                *active_tab = GuiTab::Behavior;
+                *active_tab = ManagerTab::Behavior;
             }
         });
     });

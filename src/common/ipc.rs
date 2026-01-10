@@ -3,14 +3,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::config::DaemonConfig;
 
-/// Messages sent from GUI to Daemon
+/// Messages sent from Manager to Daemon
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ConfigMessage {
     /// Update the entire daemon configuration
     Update(DaemonConfig),
 }
 
-/// Messages sent from Daemon to GUI
+/// Messages sent from Daemon to Manager
 #[derive(Debug, Serialize, Deserialize)]
 pub enum DaemonMessage {
     /// Log message from daemon
