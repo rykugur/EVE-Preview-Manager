@@ -4,13 +4,13 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
-use crate::config::profile::SaveStrategy;
 use crate::common::constants::gui::*;
-use crate::manager::utils::spawn_preview_daemon;
 use crate::common::ipc::{BootstrapMessage, DaemonMessage};
+use crate::config::profile::SaveStrategy;
+use crate::manager::utils::spawn_preview_daemon;
 
-use super::SharedState;
 use super::DaemonStatus;
+use super::SharedState;
 
 impl SharedState {
     pub fn start_daemon(&mut self) -> Result<()> {
@@ -73,6 +73,10 @@ impl SharedState {
                     self.daemon_status = DaemonStatus::Crashed(None);
                 }
             }
+            // Clear IPC channels immediately to prevent "Broken pipe" errors if save_config is called (e.g. on exit)
+            self.ipc_config_tx = None;
+            self.ipc_status_rx = None;
+            self.gui_status_rx = None;
         }
         Ok(())
     }
@@ -150,7 +154,9 @@ impl SharedState {
                                     s.dimensions.height = height;
                                 })
                                 .or_insert_with(|| {
-                                    crate::common::types::CharacterSettings::new(x, y, width, height)
+                                    crate::common::types::CharacterSettings::new(
+                                        x, y, width, height,
+                                    )
                                 });
                         }
 
@@ -161,14 +167,14 @@ impl SharedState {
                             .unwrap_or(false);
 
                         if auto_save {
-                             // Debounce save: only write to disk if it's been at least 1 second since last attempt
-                             if self.last_save_attempt.elapsed() > Duration::from_secs(1) {
-                                 let _ = self.config.save_with_strategy(SaveStrategy::Overwrite);
-                                 self.last_save_attempt = Instant::now();
-                                 debug!("Debounced auto-save triggered");
-                             } else {
-                                 self.settings_changed = true; // Mark as dirty for final save
-                             }
+                            // Debounce save: only write to disk if it's been at least 1 second since last attempt
+                            if self.last_save_attempt.elapsed() > Duration::from_secs(1) {
+                                let _ = self.config.save_with_strategy(SaveStrategy::Overwrite);
+                                self.last_save_attempt = Instant::now();
+                                debug!("Debounced auto-save triggered");
+                            } else {
+                                self.settings_changed = true; // Mark as dirty for final save
+                            }
                         }
                     }
                     DaemonMessage::CharacterDetected(name) => {
@@ -184,7 +190,12 @@ impl SharedState {
         }
 
         if let Some(name) = profile_switch_request {
-            if let Some(idx) = self.config.profiles.iter().position(|p| p.profile_name == name) {
+            if let Some(idx) = self
+                .config
+                .profiles
+                .iter()
+                .position(|p| p.profile_name == name)
+            {
                 self.switch_profile(idx);
             } else {
                 warn!("Requested profile '{}' not found", name);
