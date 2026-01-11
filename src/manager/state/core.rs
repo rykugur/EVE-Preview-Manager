@@ -148,7 +148,8 @@ impl SharedState {
     }
 
     pub fn switch_profile(&mut self, idx: usize) {
-        info!(profile_idx = idx, "Profile switch requested");
+        let profile_name = self.config.profiles.get(idx).map(|p| p.profile_name.as_str()).unwrap_or("Unknown");
+        info!(profile_idx = idx, profile_name = %profile_name, "Profile switch requested");
 
         if idx < self.config.profiles.len() {
             self.config.global.selected_profile = self.config.profiles[idx].profile_name.clone();
