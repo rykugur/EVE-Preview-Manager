@@ -16,21 +16,79 @@ use crate::common::types::CharacterSettings;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CycleGroup {
     pub name: String,
-    #[serde(default)]
-    pub characters: Vec<String>,
+    #[serde(default, rename = "characters", alias = "slots", deserialize_with = "deserialize_slots")]
+    pub slots: Vec<CycleSlot>, // Renamed from characters, supports both for compat
     pub hotkey_forward: Option<crate::config::HotkeyBinding>,
     pub hotkey_backward: Option<crate::config::HotkeyBinding>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum CycleSlot {
+    #[serde(rename = "eve")]
+    Eve(String),
+    #[serde(rename = "source")]
+    Source(String),
 }
 
 impl CycleGroup {
     pub fn default_group() -> Self {
         Self {
             name: "Default".to_string(),
-            characters: Vec::new(),
+            slots: Vec::new(),
             hotkey_forward: None,
             hotkey_backward: None,
         }
     }
+}
+
+// Helper for migrating legacy string list to CycleSlot::Eve
+fn deserialize_slots<'de, D>(deserializer: D) -> Result<Vec<CycleSlot>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    // For binary formats (IPC), strict typing is enforced and we don't need migration logic.
+    // Migration is only relevant for JSON config files.
+    if !deserializer.is_human_readable() {
+        return Vec::<CycleSlot>::deserialize(deserializer);
+    }
+
+    use serde::de::{self, Visitor};
+    use std::fmt;
+
+    struct SlotsVisitor;
+
+    impl<'de> Visitor<'de> for SlotsVisitor {
+        type Value = Vec<CycleSlot>;
+
+        fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+            formatter.write_str("a list of strings or CycleSlot objects")
+        }
+
+        fn visit_seq<A>(self, mut seq: A) -> Result<Self::Value, A::Error>
+        where
+            A: de::SeqAccess<'de>,
+        {
+            let mut slots = Vec::new();
+            
+            #[derive(Deserialize)]
+            #[serde(untagged)]
+            enum Helper {
+                Legacy(String),
+                Modern(CycleSlot),
+            }
+
+            while let Some(elem) = seq.next_element::<Helper>()? {
+                match elem {
+                    Helper::Legacy(s) => slots.push(CycleSlot::Eve(s)),
+                    Helper::Modern(slot) => slots.push(slot),
+                }
+            }
+
+            Ok(slots)
+        }
+    }
+
+    deserializer.deserialize_seq(SlotsVisitor)
 }
 
 /// Rule for identifying and naming arbitrary application windows
@@ -42,6 +100,8 @@ pub struct CustomWindowRule {
     pub class_pattern: Option<String>,
     /// Display name used as the identifier ("Character Name")
     pub alias: String,
+    
+    // --- Layout Overrides ---
     /// Default width for this source type
     #[serde(default = "default_thumbnail_width")]
     pub default_width: u16,
@@ -51,6 +111,25 @@ pub struct CustomWindowRule {
     /// If true, only preview the first matching window found
     #[serde(default)]
     pub limit: bool,
+    
+    // --- Visual Overrides (Optional) ---
+    // Border Overrides
+    pub active_border_color: Option<String>,
+    pub inactive_border_color: Option<String>,
+    pub active_border_size: Option<u16>,
+    pub inactive_border_size: Option<u16>,
+    
+    // Text Overrides
+    pub text_color: Option<String>,
+    pub text_size: Option<u16>,
+    pub text_x: Option<i16>,
+    pub text_y: Option<i16>,
+    
+    // Behavior Overrides
+    #[serde(default)]
+    pub preview_mode: Option<crate::common::types::PreviewMode>,
+    /// Specific hotkey to activate this source directly
+    pub hotkey: Option<crate::config::HotkeyBinding>,
 }
 
 /// Hotkey backend type selection
@@ -595,14 +674,14 @@ mod tests {
     fn test_profile_cycle_group() {
         let mut profile = Profile::default_with_name("Cycle Test".to_string(), String::new());
         // Populate the default group
-        profile.cycle_groups[0].characters = vec![
-            "Character1".to_string(),
-            "Character2".to_string(),
-            "Character3".to_string(),
+        profile.cycle_groups[0].slots = vec![
+            CycleSlot::Eve("Character1".to_string()),
+            CycleSlot::Eve("Character2".to_string()),
+            CycleSlot::Eve("Character3".to_string()),
         ];
 
-        assert_eq!(profile.cycle_groups[0].characters.len(), 3);
-        assert_eq!(profile.cycle_groups[0].characters[0], "Character1");
+        assert_eq!(profile.cycle_groups[0].slots.len(), 3);
+        assert_eq!(profile.cycle_groups[0].slots[0], CycleSlot::Eve("Character1".to_string()));
     }
 
     #[test]
@@ -646,7 +725,9 @@ mod tests {
         assert_eq!(profile.cycle_groups.len(), 1);
         let group = &profile.cycle_groups[0];
         assert_eq!(group.name, "Default");
-        assert_eq!(group.characters, vec!["A", "B"]);
+        assert_eq!(group.slots.len(), 2);
+        assert_eq!(group.slots[0], CycleSlot::Eve("A".to_string()));
+        assert_eq!(group.slots[1], CycleSlot::Eve("B".to_string()));
         assert!(group.hotkey_forward.is_some());
         assert!(group.hotkey_backward.is_some());
     }

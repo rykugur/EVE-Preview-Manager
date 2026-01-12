@@ -230,7 +230,7 @@ pub fn render_cycle_group_column(
             let (_, dropped_payload) = ui.dnd_drop_zone::<usize, ()>(frame, |ui| {
                 ui.set_min_height(100.0);
 
-                for (row_idx, character) in current_group.characters.iter().enumerate() {
+                for (row_idx, slot) in current_group.slots.iter().enumerate() {
                     let item_id = egui::Id::new("cycle_group_item").with(row_idx);
 
                     let response = ui
@@ -238,15 +238,15 @@ pub fn render_cycle_group_column(
                             let drag_source = ui.dnd_drag_source(item_id, row_idx, |ui| {
                                 ui.horizontal(|ui| {
                                     ui.label(egui::RichText::new("::").weak());
-
-                                    let is_custom = profile
-                                        .custom_windows
-                                        .iter()
-                                        .any(|r| r.alias == *character);
-                                    if is_custom {
-                                        ui.label(format!("[Source] {}", character));
-                                    } else {
-                                        ui.label(character);
+                                    
+                                    match slot {
+                                        crate::config::profile::CycleSlot::Eve(name) => {
+                                            ui.label(name);
+                                        }
+                                        crate::config::profile::CycleSlot::Source(name) => {
+                                             ui.colored_label(egui::Color32::LIGHT_BLUE, "Source");
+                                             ui.label(name);
+                                        }
                                     }
                                 });
                             });
@@ -297,12 +297,12 @@ pub fn render_cycle_group_column(
 
             if let Some(dragged_payload) = dropped_payload {
                 from_idx = Some(*dragged_payload);
-                to_idx = Some(current_group.characters.len());
+                to_idx = Some(current_group.slots.len());
                 *changed = true;
             }
 
             if let Some(idx) = to_delete {
-                current_group.characters.remove(idx);
+                current_group.slots.remove(idx);
             }
 
             if let (Some(from), Some(mut to)) = (from_idx, to_idx) {
@@ -310,13 +310,13 @@ pub fn render_cycle_group_column(
                     to -= 1;
                 }
                 if from != to {
-                    let item = current_group.characters.remove(from);
-                    let insert_idx = to.min(current_group.characters.len());
-                    current_group.characters.insert(insert_idx, item);
+                    let item = current_group.slots.remove(from);
+                    let insert_idx = to.min(current_group.slots.len());
+                    current_group.slots.insert(insert_idx, item);
                 }
             }
 
-            if current_group.characters.is_empty() {
+            if current_group.slots.is_empty() {
                 ui.label(egui::RichText::new("No characters in this group.").weak());
             }
         });

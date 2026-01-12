@@ -38,7 +38,14 @@ impl CycleState {
             groups.insert(
                 group.name,
                 GroupState {
-                    order: group.characters,
+                    order: group
+                        .slots
+                        .iter()
+                        .map(|slot| match slot {
+                            crate::config::profile::CycleSlot::Eve(name) => name.clone(),
+                            crate::config::profile::CycleSlot::Source(name) => name.clone(),
+                        })
+                        .collect(),
                     current_index: 0,
                 },
             );
@@ -481,7 +488,10 @@ mod tests {
         use crate::config::profile::CycleGroup;
         let group1 = CycleGroup {
             name: "G1".to_string(),
-            characters: vec!["A".to_string(), "B".to_string()],
+            slots: vec![
+                crate::config::profile::CycleSlot::Eve("A".to_string()),
+                crate::config::profile::CycleSlot::Eve("B".to_string()),
+            ],
             hotkey_forward: None,
             hotkey_backward: None,
         };

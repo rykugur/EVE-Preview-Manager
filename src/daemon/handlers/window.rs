@@ -114,15 +114,38 @@ pub fn process_detected_window(
                             });
 
                             // Force initial update for custom sources as they might not emit Damage events immediately
-                            if !identity.is_eve
-                                && let Err(e) =
-                                    thumbnail.update(ctx.display_config, ctx.font_renderer)
-                            {
-                                tracing::warn!(
-                                    "Failed to perform initial update for custom source {}: {}",
-                                    thumbnail.character_name,
-                                    e
-                                );
+                            if !identity.is_eve {
+                                // 1. Attempt immediate capture
+                                if let Err(e) = thumbnail.update(ctx.display_config, ctx.font_renderer) {
+                                    tracing::warn!(
+                                        "Failed to perform initial update for custom source {}: {}",
+                                        thumbnail.character_name,
+                                        e
+                                    );
+                                }
+
+                                // 2. Send synthetic Expose event to force the application to repaint
+                                // This fixes issues where apps wait for focus or interaction to paint their first frame
+                                let expose = ExposeEvent {
+                                    response_type: EXPOSE_EVENT,
+                                    sequence: 0,
+                                    window,
+                                    x: 0,
+                                    y: 0,
+                                    width: thumbnail.src_dimensions.width,
+                                    height: thumbnail.src_dimensions.height,
+                                    count: 0,
+                                };
+                                
+                                if let Err(e) = ctx.app_ctx.conn.send_event(
+                                    false, 
+                                    window, 
+                                    EventMask::EXPOSURE, 
+                                    expose
+                                ) {
+                                     tracing::warn!("Failed to send Expose event to {}: {}", thumbnail.character_name, e);
+                                }
+                                let _ = ctx.app_ctx.conn.flush();
                             }
                         }
                     }

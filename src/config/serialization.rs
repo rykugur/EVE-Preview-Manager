@@ -108,7 +108,11 @@ impl From<ProfileHelper> for Profile {
         {
             cycle_groups.push(CycleGroup {
                 name: "Default".to_string(),
-                characters: helper.hotkey_cycle_group,
+                slots: helper
+                    .hotkey_cycle_group
+                    .into_iter()
+                    .map(crate::config::profile::CycleSlot::Eve)
+                    .collect(),
                 hotkey_forward: helper.hotkey_cycle_forward,
                 hotkey_backward: helper.hotkey_cycle_backward,
             });
@@ -243,7 +247,7 @@ impl<'de> Deserialize<'de> for Profile {
                 #[serde(default)]
                 pub hotkey_input_device: Option<String>,
                 #[serde(default)]
-                pub cycle_groups: Vec<CycleGroup>,
+                pub cycle_groups: Vec<CycleGroupBinary>,
                 #[serde(default)]
                 pub hotkey_logged_out_cycle: bool,
                 #[serde(default)]
@@ -264,7 +268,32 @@ impl<'de> Deserialize<'de> for Profile {
                 pub custom_windows: Vec<CustomWindowRule>,
             }
 
+            #[derive(Deserialize)]
+            pub struct CycleGroupBinary {
+                pub name: String,
+                pub slots: Vec<CycleSlotBinary>,
+                pub hotkey_forward: Option<crate::config::HotkeyBinding>,
+                pub hotkey_backward: Option<crate::config::HotkeyBinding>,
+            }
+
+            #[derive(Deserialize)]
+            pub enum CycleSlotBinary {
+                Eve(String),
+                Source(String),
+            }
+
             let p = ProfileBinary::deserialize(deserializer)?;
+
+            // Convert binary cycle groups to standard CycleGroup
+            let cycle_groups: Vec<CycleGroup> = p.cycle_groups.into_iter().map(|g| CycleGroup {
+                name: g.name,
+                slots: g.slots.into_iter().map(|s| match s {
+                    CycleSlotBinary::Eve(n) => crate::config::profile::CycleSlot::Eve(n),
+                    CycleSlotBinary::Source(n) => crate::config::profile::CycleSlot::Source(n),
+                }).collect(),
+                hotkey_forward: g.hotkey_forward,
+                hotkey_backward: g.hotkey_backward,
+            }).collect();
 
             Ok(Profile {
                 profile_name: p.profile_name,
@@ -292,7 +321,7 @@ impl<'de> Deserialize<'de> for Profile {
                 client_minimize_show_overlay: p.client_minimize_show_overlay,
                 hotkey_backend: p.hotkey_backend,
                 hotkey_input_device: p.hotkey_input_device,
-                cycle_groups: p.cycle_groups,
+                cycle_groups,
                 hotkey_logged_out_cycle: p.hotkey_logged_out_cycle,
                 hotkey_require_eve_focus: p.hotkey_require_eve_focus,
                 hotkey_profile_switch: p.hotkey_profile_switch,

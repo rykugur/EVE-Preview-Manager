@@ -196,20 +196,9 @@ pub fn check_and_create_window<'a>(
 
     // Apply Limit Logic for Custom Sources
     if !identity.is_eve {
-        // FILTER 1: Must be mapped and viewable
-        // This prevents capturing hidden utility windows often spawned by applications
-        let attrs_cookie = ctx.conn.get_window_attributes(window)?;
-        #[allow(clippy::collapsible_if)]
-        if let Ok(attrs) = attrs_cookie.reply() {
-            if attrs.map_state != MapState::VIEWABLE {
-                debug!(
-                    window = window,
-                    alias = %identity.name,
-                    "Skipping unmapped custom source"
-                );
-                return Ok(None);
-            }
-        }
+        // FILTER 1: Must be mapped and viewable OR minimized
+        // We removed the strict MapState::VIEWABLE check to allow minimized windows to be detected.
+        // Utility windows are still filtered by `is_normal_window` below.
 
         if !crate::x11::is_normal_window(ctx.conn, window, ctx.atoms).unwrap_or(true) {
             debug!(window = window, alias = %identity.name, "Skipping non-normal custom source (utility/dock)");

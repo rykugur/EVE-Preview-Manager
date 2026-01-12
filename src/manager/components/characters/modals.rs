@@ -64,7 +64,12 @@ pub fn render_add_characters_modal(
                             // Show if already in cycle group
                             let current_group =
                                 &profile.cycle_groups[state.selected_cycle_group_index];
-                            let already_in_cycle = current_group.characters.contains(&name);
+                                
+                            let already_in_cycle = current_group.slots.iter().any(|s| match s {
+                                     crate::config::profile::CycleSlot::Eve(n) => n == &name,
+                                     crate::config::profile::CycleSlot::Source(n) => n == &name,
+                            });
+                            
                             let is_custom_source =
                                 profile.custom_windows.iter().any(|r| r.alias == name);
 
@@ -94,9 +99,23 @@ pub fn render_add_characters_modal(
                     let current_group = &mut profile.cycle_groups[state.selected_cycle_group_index];
 
                     for (name, selected) in &state.character_selections {
-                        if *selected && !current_group.characters.contains(name) {
-                            current_group.characters.push(name.clone());
-                            added_any = true;
+                        if *selected {
+                             // Check if already in group (sloppy check against string value inside slot)
+                             let already_exists = current_group.slots.iter().any(|s| match s {
+                                 crate::config::profile::CycleSlot::Eve(n) => n == name,
+                                 crate::config::profile::CycleSlot::Source(n) => n == name,
+                             });
+
+                             if !already_exists {
+                                 let is_source = profile.custom_windows.iter().any(|r| r.alias == *name);
+                                 let slot = if is_source {
+                                     crate::config::profile::CycleSlot::Source(name.clone())
+                                 } else {
+                                     crate::config::profile::CycleSlot::Eve(name.clone())
+                                 };
+                                 current_group.slots.push(slot);
+                                 added_any = true;
+                             }
                         }
                     }
 
