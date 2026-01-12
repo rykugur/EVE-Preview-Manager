@@ -167,8 +167,12 @@ impl SourcesTab {
                                                     .strong()
                                                     .color(ui.style().visuals.text_color()),
                                             );
-                                            
-                                            if ui.small_button("✖").on_hover_text("Clear Hotkey").clicked() {
+
+                                            if ui
+                                                .small_button("✖")
+                                                .on_hover_text("Clear Hotkey")
+                                                .clicked()
+                                            {
                                                 rule.hotkey = None;
                                                 changed = true;
                                             }
@@ -180,11 +184,12 @@ impl SourcesTab {
                                             );
                                         }
 
-                                        let bind_text = if hotkey_state.is_capturing_custom_rule(&rule.alias) {
-                                            "Capturing..."
-                                        } else {
-                                            "⌨ Bind"
-                                        };
+                                        let bind_text =
+                                            if hotkey_state.is_capturing_custom_rule(&rule.alias) {
+                                                "Capturing..."
+                                            } else {
+                                                "⌨ Bind"
+                                            };
 
                                         if ui.button(bind_text).clicked() {
                                             hotkey_state.start_key_capture_for_custom_rule(
@@ -201,12 +206,18 @@ impl SourcesTab {
                                         // Active Border
                                         ui.horizontal(|ui| {
                                             ui.label("Active Border:");
-                                            let mut enabled = rule.active_border_color.is_some() || rule.active_border_size.is_some();
+                                            let mut enabled = rule.active_border_color.is_some()
+                                                || rule.active_border_size.is_some();
                                             if ui.checkbox(&mut enabled, "Enabled").changed() {
                                                 if enabled {
                                                     // Default to profile settings
-                                                    rule.active_border_color = Some(profile.thumbnail_active_border_color.clone());
-                                                    rule.active_border_size = Some(profile.thumbnail_active_border_size);
+                                                    rule.active_border_color = Some(
+                                                        profile
+                                                            .thumbnail_active_border_color
+                                                            .clone(),
+                                                    );
+                                                    rule.active_border_size =
+                                                        Some(profile.thumbnail_active_border_size);
                                                 } else {
                                                     rule.active_border_color = None;
                                                     rule.active_border_size = None;
@@ -214,21 +225,50 @@ impl SourcesTab {
                                                 changed = true;
                                             }
                                         });
-                                        if rule.active_border_color.is_some() || rule.active_border_size.is_some() {
+                                        if rule.active_border_color.is_some()
+                                            || rule.active_border_size.is_some()
+                                        {
                                             ui.indent("active_border_details", |ui| {
                                                 ui.horizontal(|ui| {
                                                     ui.label("Color:");
-                                                    let color = rule.active_border_color.clone().unwrap_or_else(|| profile.thumbnail_active_border_color.clone());
-                                                    let mut egui_color = crate::common::color::hex_to_color32(&color).unwrap_or(egui::Color32::WHITE);
-                                                    if ui.color_edit_button_srgba(&mut egui_color).changed() {
-                                                         rule.active_border_color = Some(crate::common::color::color32_to_hex(egui_color));
-                                                         changed = true;
+                                                    let color = rule
+                                                        .active_border_color
+                                                        .clone()
+                                                        .unwrap_or_else(|| {
+                                                            profile
+                                                                .thumbnail_active_border_color
+                                                                .clone()
+                                                        });
+                                                    let mut egui_color =
+                                                        crate::common::color::hex_to_color32(
+                                                            &color,
+                                                        )
+                                                        .unwrap_or(egui::Color32::WHITE);
+                                                    if ui
+                                                        .color_edit_button_srgba(&mut egui_color)
+                                                        .changed()
+                                                    {
+                                                        rule.active_border_color = Some(
+                                                            crate::common::color::color32_to_hex(
+                                                                egui_color,
+                                                            ),
+                                                        );
+                                                        changed = true;
                                                     }
                                                 });
                                                 ui.horizontal(|ui| {
                                                     ui.label("Size:");
-                                                    let mut size = rule.active_border_size.unwrap_or(profile.thumbnail_active_border_size);
-                                                    if ui.add(egui::DragValue::new(&mut size).range(1..=20)).changed() {
+                                                    let mut size =
+                                                        rule.active_border_size.unwrap_or(
+                                                            profile.thumbnail_active_border_size,
+                                                        );
+                                                    if ui
+                                                        .add(
+                                                            egui::DragValue::new(&mut size)
+                                                                .range(1..=20),
+                                                        )
+                                                        .changed()
+                                                    {
                                                         rule.active_border_size = Some(size);
                                                         changed = true;
                                                     }
@@ -239,11 +279,18 @@ impl SourcesTab {
                                         // Inactive Border
                                         ui.horizontal(|ui| {
                                             ui.label("Inactive Border:");
-                                            let mut enabled = rule.inactive_border_color.is_some() || rule.inactive_border_size.is_some();
+                                            let mut enabled = rule.inactive_border_color.is_some()
+                                                || rule.inactive_border_size.is_some();
                                             if ui.checkbox(&mut enabled, "Enabled").changed() {
                                                 if enabled {
-                                                    rule.inactive_border_color = Some(profile.thumbnail_inactive_border_color.clone());
-                                                    rule.inactive_border_size = Some(profile.thumbnail_inactive_border_size);
+                                                    rule.inactive_border_color = Some(
+                                                        profile
+                                                            .thumbnail_inactive_border_color
+                                                            .clone(),
+                                                    );
+                                                    rule.inactive_border_size = Some(
+                                                        profile.thumbnail_inactive_border_size,
+                                                    );
                                                 } else {
                                                     rule.inactive_border_color = None;
                                                     rule.inactive_border_size = None;
@@ -251,21 +298,50 @@ impl SourcesTab {
                                                 changed = true;
                                             }
                                         });
-                                        if rule.inactive_border_color.is_some() || rule.inactive_border_size.is_some() {
+                                        if rule.inactive_border_color.is_some()
+                                            || rule.inactive_border_size.is_some()
+                                        {
                                             ui.indent("inactive_border_details", |ui| {
                                                 ui.horizontal(|ui| {
                                                     ui.label("Color:");
-                                                    let color = rule.inactive_border_color.clone().unwrap_or_else(|| profile.thumbnail_inactive_border_color.clone());
-                                                    let mut egui_color = crate::common::color::hex_to_color32(&color).unwrap_or(egui::Color32::WHITE);
-                                                    if ui.color_edit_button_srgba(&mut egui_color).changed() {
-                                                         rule.inactive_border_color = Some(crate::common::color::color32_to_hex(egui_color));
-                                                         changed = true;
+                                                    let color = rule
+                                                        .inactive_border_color
+                                                        .clone()
+                                                        .unwrap_or_else(|| {
+                                                            profile
+                                                                .thumbnail_inactive_border_color
+                                                                .clone()
+                                                        });
+                                                    let mut egui_color =
+                                                        crate::common::color::hex_to_color32(
+                                                            &color,
+                                                        )
+                                                        .unwrap_or(egui::Color32::WHITE);
+                                                    if ui
+                                                        .color_edit_button_srgba(&mut egui_color)
+                                                        .changed()
+                                                    {
+                                                        rule.inactive_border_color = Some(
+                                                            crate::common::color::color32_to_hex(
+                                                                egui_color,
+                                                            ),
+                                                        );
+                                                        changed = true;
                                                     }
                                                 });
                                                 ui.horizontal(|ui| {
                                                     ui.label("Size:");
-                                                    let mut size = rule.inactive_border_size.unwrap_or(profile.thumbnail_inactive_border_size);
-                                                    if ui.add(egui::DragValue::new(&mut size).range(1..=20)).changed() {
+                                                    let mut size =
+                                                        rule.inactive_border_size.unwrap_or(
+                                                            profile.thumbnail_inactive_border_size,
+                                                        );
+                                                    if ui
+                                                        .add(
+                                                            egui::DragValue::new(&mut size)
+                                                                .range(1..=20),
+                                                        )
+                                                        .changed()
+                                                    {
                                                         rule.inactive_border_size = Some(size);
                                                         changed = true;
                                                     }
@@ -279,7 +355,8 @@ impl SourcesTab {
                                             let mut enabled = rule.text_color.is_some();
                                             if ui.checkbox(&mut enabled, "Enabled").changed() {
                                                 if enabled {
-                                                    rule.text_color = Some(profile.thumbnail_text_color.clone());
+                                                    rule.text_color =
+                                                        Some(profile.thumbnail_text_color.clone());
                                                 } else {
                                                     rule.text_color = None;
                                                 }
@@ -290,10 +367,20 @@ impl SourcesTab {
                                             ui.indent("text_color_details", |ui| {
                                                 ui.horizontal(|ui| {
                                                     ui.label("Color:");
-                                                    let mut egui_color = crate::common::color::hex_to_color32(color_hex).unwrap_or(egui::Color32::WHITE);
-                                                    if ui.color_edit_button_srgba(&mut egui_color).changed() {
-                                                         *color_hex = crate::common::color::color32_to_hex(egui_color);
-                                                         changed = true;
+                                                    let mut egui_color =
+                                                        crate::common::color::hex_to_color32(
+                                                            color_hex,
+                                                        )
+                                                        .unwrap_or(egui::Color32::WHITE);
+                                                    if ui
+                                                        .color_edit_button_srgba(&mut egui_color)
+                                                        .changed()
+                                                    {
+                                                        *color_hex =
+                                                            crate::common::color::color32_to_hex(
+                                                                egui_color,
+                                                            );
+                                                        changed = true;
                                                     }
                                                 });
                                             });
@@ -304,15 +391,19 @@ impl SourcesTab {
                                             ui.label("Static Mode:");
                                             let mut is_static = matches!(
                                                 rule.preview_mode,
-                                                Some(crate::common::types::PreviewMode::Static { .. })
+                                                Some(
+                                                    crate::common::types::PreviewMode::Static { .. }
+                                                )
                                             );
 
                                             if ui.checkbox(&mut is_static, "Enabled").changed() {
                                                 if is_static {
                                                     // Enable Static Mode (Default to Black)
-                                                    rule.preview_mode = Some(crate::common::types::PreviewMode::Static {
-                                                        color: "#000000".to_string(),
-                                                    });
+                                                    rule.preview_mode = Some(
+                                                        crate::common::types::PreviewMode::Static {
+                                                            color: "#000000".to_string(),
+                                                        },
+                                                    );
                                                 } else {
                                                     // Disable Static Mode (Revert to Live/None)
                                                     rule.preview_mode = None;
@@ -321,23 +412,36 @@ impl SourcesTab {
                                             }
                                         });
 
-                                         // Static Mode Settings (Indented)
-                                        if let Some(crate::common::types::PreviewMode::Static { ref mut color }) = rule.preview_mode {
+                                        // Static Mode Settings (Indented)
+                                        if let Some(crate::common::types::PreviewMode::Static {
+                                            ref mut color,
+                                        }) = rule.preview_mode
+                                        {
                                             ui.indent("static_mode_details", |ui| {
                                                 ui.horizontal(|ui| {
                                                     ui.label("Color:");
                                                     let mut color_str = color.clone();
-                                                    let text_edit = egui::TextEdit::singleline(&mut color_str).desired_width(100.0);
+                                                    let text_edit =
+                                                        egui::TextEdit::singleline(&mut color_str)
+                                                            .desired_width(100.0);
 
                                                     if ui.add(text_edit).changed() {
                                                         *color = color_str.clone();
                                                         changed = true;
                                                     }
 
-                                                    if let Ok(mut c) = crate::manager::utils::parse_hex_color(&color_str)
-                                                        && ui.color_edit_button_srgba(&mut c).changed()
+                                                    if let Ok(mut c) =
+                                                        crate::manager::utils::parse_hex_color(
+                                                            &color_str,
+                                                        )
+                                                        && ui
+                                                            .color_edit_button_srgba(&mut c)
+                                                            .changed()
                                                     {
-                                                        let new_hex = crate::manager::utils::format_hex_color(c);
+                                                        let new_hex =
+                                                            crate::manager::utils::format_hex_color(
+                                                                c,
+                                                            );
                                                         *color = new_hex;
                                                         changed = true;
                                                     }
@@ -674,7 +778,11 @@ impl SourcesTab {
 
         // Render Hotkey Modal if active
         if hotkey_state.is_dialog_open() {
-             changed |= crate::manager::components::hotkey_settings::render_key_capture_modal(ui, profile, hotkey_state);
+            changed |= crate::manager::components::hotkey_settings::render_key_capture_modal(
+                ui,
+                profile,
+                hotkey_state,
+            );
         }
 
         changed

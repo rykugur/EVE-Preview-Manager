@@ -7,8 +7,8 @@ use tracing::{debug, error, info, warn};
 use crate::common::constants::manager_ui::*;
 use crate::common::ipc::{BootstrapMessage, DaemonMessage};
 
-use crate::manager::utils::spawn_daemon;
 use super::core::SaveMode;
+use crate::manager::utils::spawn_daemon;
 
 use super::DaemonStatus;
 use super::SharedState;
@@ -133,7 +133,7 @@ impl SharedState {
 
         // 2. Poll Status Messages
         let mut profile_switch_request = None;
-        
+
         // Collect messages first to avoid holding an immutable borrow on self while calling mutable methods (save_config)
         let messages: Vec<DaemonMessage> = if let Some(ref rx) = self.daemon_status_rx {
             let mut msgs = Vec::new();
@@ -183,9 +183,7 @@ impl SharedState {
                                 s.dimensions.height = height;
                             })
                             .or_insert_with(|| {
-                                crate::common::types::CharacterSettings::new(
-                                    x, y, width, height,
-                                )
+                                crate::common::types::CharacterSettings::new(x, y, width, height)
                             });
                     }
 

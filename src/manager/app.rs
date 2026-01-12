@@ -353,7 +353,11 @@ impl eframe::App for ManagerApp {
                         }
                     }
                     ManagerTab::Sources => {
-                        if self.sources_state.ui(ui, current_profile, &mut self.hotkey_settings_state) {
+                        if self.sources_state.ui(
+                            ui,
+                            current_profile,
+                            &mut self.hotkey_settings_state,
+                        ) {
                             state.settings_changed = true;
                             state.config_status_message = None;
                         }

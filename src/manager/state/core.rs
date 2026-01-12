@@ -97,18 +97,16 @@ impl SharedState {
             // If "Auto Save" is disabled, we must ensure we sync the LAST SAVED state to the daemon,
             // not the current transient in-memory state. This ensures that actions like "Refresh"
             // or "Profile Switch" revert to the saved positions as expected.
-            if !selected_profile.thumbnail_auto_save_position {
-                if let Ok(disk_config) = crate::config::profile::Config::load() {
-                    if let Some(disk_profile) = disk_config
-                        .profiles
-                        .iter()
-                        .find(|p| p.profile_name == selected_profile.profile_name)
-                    {
-                        info!("Auto-save disabled: Syncing explicit disk positions to daemon");
-                        character_thumbnails = disk_profile.character_thumbnails.clone();
-                        custom_source_thumbnails = disk_profile.custom_source_thumbnails.clone();
-                    }
-                }
+            if !selected_profile.thumbnail_auto_save_position
+                && let Ok(disk_config) = crate::config::profile::Config::load()
+                && let Some(disk_profile) = disk_config
+                    .profiles
+                    .iter()
+                    .find(|p| p.profile_name == selected_profile.profile_name)
+            {
+                info!("Auto-save disabled: Syncing explicit disk positions to daemon");
+                character_thumbnails = disk_profile.character_thumbnails.clone();
+                custom_source_thumbnails = disk_profile.custom_source_thumbnails.clone();
             }
 
             // Filter based on custom rules in profile.
@@ -163,15 +161,15 @@ impl SharedState {
             // Restore last explicitly saved positions from disk to prevent persistence of transient moves.
             if let Ok(disk_config) = crate::config::profile::Config::load() {
                 for profile in config_to_save.profiles.iter_mut() {
-                    if !profile.thumbnail_auto_save_position {
-                        if let Some(disk_profile) = disk_config
+                    if !profile.thumbnail_auto_save_position
+                        && let Some(disk_profile) = disk_config
                             .profiles
                             .iter()
                             .find(|p| p.profile_name == profile.profile_name)
-                        {
-                            profile.character_thumbnails = disk_profile.character_thumbnails.clone();
-                            profile.custom_source_thumbnails = disk_profile.custom_source_thumbnails.clone();
-                        }
+                    {
+                        profile.character_thumbnails = disk_profile.character_thumbnails.clone();
+                        profile.custom_source_thumbnails =
+                            disk_profile.custom_source_thumbnails.clone();
                     }
                 }
             } else {
@@ -251,7 +249,8 @@ impl SharedState {
     }
 
     pub fn save_thumbnail_positions(&mut self) -> Result<()> {
-        self.save_config(SaveMode::Explicit).context("Failed to save configuration")?;
+        self.save_config(SaveMode::Explicit)
+            .context("Failed to save configuration")?;
 
         self.status_message = Some(StatusMessage {
             text: "Thumbnail positions saved".to_string(),

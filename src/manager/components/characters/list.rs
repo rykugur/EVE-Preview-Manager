@@ -238,14 +238,14 @@ pub fn render_cycle_group_column(
                             let drag_source = ui.dnd_drag_source(item_id, row_idx, |ui| {
                                 ui.horizontal(|ui| {
                                     ui.label(egui::RichText::new("::").weak());
-                                    
+
                                     match slot {
                                         crate::config::profile::CycleSlot::Eve(name) => {
                                             ui.label(name);
                                         }
                                         crate::config::profile::CycleSlot::Source(name) => {
-                                             ui.colored_label(egui::Color32::LIGHT_BLUE, "Source");
-                                             ui.label(name);
+                                            ui.colored_label(egui::Color32::LIGHT_BLUE, "Source");
+                                            ui.label(name);
                                         }
                                     }
                                 });

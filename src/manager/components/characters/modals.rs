@@ -64,12 +64,13 @@ pub fn render_add_characters_modal(
                             // Show if already in cycle group
                             let current_group =
                                 &profile.cycle_groups[state.selected_cycle_group_index];
-                                
-                            let already_in_cycle = current_group.cycle_list.iter().any(|s| match s {
-                                     crate::config::profile::CycleSlot::Eve(n) => n == &name,
-                                     crate::config::profile::CycleSlot::Source(n) => n == &name,
-                            });
-                            
+
+                            let already_in_cycle =
+                                current_group.cycle_list.iter().any(|s| match s {
+                                    crate::config::profile::CycleSlot::Eve(n) => n == &name,
+                                    crate::config::profile::CycleSlot::Source(n) => n == &name,
+                                });
+
                             let is_custom_source =
                                 profile.custom_windows.iter().any(|r| r.alias == name);
 
@@ -100,22 +101,23 @@ pub fn render_add_characters_modal(
 
                     for (name, selected) in &state.character_selections {
                         if *selected {
-                             // Check if already in group (sloppy check against string value inside slot)
-                             let already_exists = current_group.cycle_list.iter().any(|s| match s {
-                                 crate::config::profile::CycleSlot::Eve(n) => n == name,
-                                 crate::config::profile::CycleSlot::Source(n) => n == name,
-                             });
+                            // Check if already in group (sloppy check against string value inside slot)
+                            let already_exists = current_group.cycle_list.iter().any(|s| match s {
+                                crate::config::profile::CycleSlot::Eve(n) => n == name,
+                                crate::config::profile::CycleSlot::Source(n) => n == name,
+                            });
 
-                             if !already_exists {
-                                 let is_source = profile.custom_windows.iter().any(|r| r.alias == *name);
-                                 let slot = if is_source {
-                                     crate::config::profile::CycleSlot::Source(name.clone())
-                                 } else {
-                                     crate::config::profile::CycleSlot::Eve(name.clone())
-                                 };
-                                 current_group.cycle_list.push(slot);
-                                 added_any = true;
-                             }
+                            if !already_exists {
+                                let is_source =
+                                    profile.custom_windows.iter().any(|r| r.alias == *name);
+                                let slot = if is_source {
+                                    crate::config::profile::CycleSlot::Source(name.clone())
+                                } else {
+                                    crate::config::profile::CycleSlot::Eve(name.clone())
+                                };
+                                current_group.cycle_list.push(slot);
+                                added_any = true;
+                            }
                         }
                     }
 

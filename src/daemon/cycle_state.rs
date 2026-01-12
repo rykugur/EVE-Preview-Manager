@@ -147,7 +147,10 @@ impl CycleState {
                 if reset_on_switch {
                     let group_changed = self.last_active_group.as_deref() != Some(group_name);
                     if group_changed {
-                        debug!(group = group_name, "Switched to new cycle group with reset enabled - resetting index to prev");
+                        debug!(
+                            group = group_name,
+                            "Switched to new cycle group with reset enabled - resetting index to prev"
+                        );
                         group_state.current_index = group_state.order.len().saturating_sub(1); // Set to end so next increment moves to 0
                     }
                 }
@@ -229,7 +232,10 @@ impl CycleState {
                 if reset_on_switch {
                     let group_changed = self.last_active_group.as_deref() != Some(group_name);
                     if group_changed {
-                        debug!(group = group_name, "Switched to new cycle group with reset enabled - resetting index to 0");
+                        debug!(
+                            group = group_name,
+                            "Switched to new cycle group with reset enabled - resetting index to 0"
+                        );
                         group_state.current_index = 0; // Set to 0 so next decrement moves to len-1 (conceptually "backward from 0" means "last item")
                     }
                 }
@@ -512,7 +518,7 @@ mod tests {
         use crate::config::profile::CycleGroup;
         let group1 = CycleGroup {
             name: "G1".to_string(),
-            slots: vec![
+            cycle_list: vec![
                 crate::config::profile::CycleSlot::Eve("A".to_string()),
                 crate::config::profile::CycleSlot::Eve("B".to_string()),
             ],
@@ -524,8 +530,63 @@ mod tests {
         state.add_window("B".to_string(), 200);
 
         assert_eq!(
-            state.cycle_forward("G1", None),
+            state.cycle_forward("G1", None, false),
             Some((200, "B".to_string()))
         );
+    }
+
+    #[test]
+    fn test_cycle_reset_on_group_switch() {
+        use crate::config::profile::CycleGroup;
+        let group1 = CycleGroup {
+            name: "G1".to_string(),
+            cycle_list: vec![
+                crate::config::profile::CycleSlot::Eve("A".to_string()),
+                crate::config::profile::CycleSlot::Eve("B".to_string()),
+                crate::config::profile::CycleSlot::Eve("C".to_string()),
+            ],
+            hotkey_forward: None,
+            hotkey_backward: None,
+        };
+        let group2 = CycleGroup {
+            name: "G2".to_string(),
+            cycle_list: vec![
+                crate::config::profile::CycleSlot::Eve("D".to_string()),
+                crate::config::profile::CycleSlot::Eve("E".to_string()),
+            ],
+            hotkey_forward: None,
+            hotkey_backward: None,
+        };
+
+        let mut state = CycleState::new(vec![group1, group2]);
+        state.add_window("A".to_string(), 100);
+        state.add_window("B".to_string(), 200);
+        state.add_window("C".to_string(), 300);
+        state.add_window("D".to_string(), 400);
+        state.add_window("E".to_string(), 500);
+
+        // Cycle G1: Start (0->A), Forward (1->B)
+        // Note: New state index is 0. cycle_forward increments -> 1 (B)
+        // Wait, cycle_forward logic: current_index = (current_index + 1) % len.
+        // Initial current_index is 0.
+        // 1. cycle_forward -> index 1 ("B"). Returns B.
+        assert_eq!(state.cycle_forward("G1", None, false), Some((200, "B".to_string())));
+        // Current index is 1.
+
+        // Cycle G2: Start (0->D), Forward (1->E).
+        // Switch to G2.
+        assert_eq!(state.cycle_forward("G2", None, false), Some((500, "E".to_string())));
+        
+        // Switch back to G1 with reset=false. Should resume at next index (2->C).
+        assert_eq!(state.cycle_forward("G1", None, false), Some((300, "C".to_string())));
+        
+        // Switch to G2 again.
+        assert_eq!(state.cycle_forward("G2", None, false), Some((400, "D".to_string())));
+        
+        // Switch back to G1 with reset=true. Should reset to 0 ("A")?
+        // Logic: if reset, set current_index = len - 1.
+        // Then cycle_forward increments -> 0.
+        // So it should return index 0 ("A").
+        assert_eq!(state.cycle_forward("G1", None, true), Some((100, "A".to_string())));
     }
 }

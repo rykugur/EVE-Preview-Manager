@@ -274,8 +274,9 @@ pub fn check_and_create_window<'a>(
             settings.dimensions
         };
         // Use rule preview_mode if set, otherwise fallback to saved setting
-        let mode = if let Some(rule) = &identity.rule 
-            && let Some(rule_mode) = &rule.preview_mode {
+        let mode = if let Some(rule) = &identity.rule
+            && let Some(rule_mode) = &rule.preview_mode
+        {
             rule_mode.clone()
         } else {
             settings.preview_mode.clone()

@@ -9,10 +9,10 @@ use std::sync::mpsc::Receiver;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 enum CaptureTarget {
-    ToggleSkip,        // Hotkey to temporarily skip current character
-    TogglePreviews,    // Hotkey to toggle thumbnail visibility
-    Profile,           // Hotkey to switch to this profile
-    Character(String), // Character name for per-character hotkey
+    ToggleSkip,         // Hotkey to temporarily skip current character
+    TogglePreviews,     // Hotkey to toggle thumbnail visibility
+    Profile,            // Hotkey to switch to this profile
+    Character(String),  // Character name for per-character hotkey
     CustomRule(String), // Custom Window Rule alias (Custom Source Hotkey)
 }
 
@@ -614,7 +614,11 @@ pub fn render_key_capture_modal(
 
                                 Some(CaptureTarget::CustomRule(ref alias)) => {
                                     // Find rule and update hotkey
-                                    if let Some(rule) = profile.custom_windows.iter_mut().find(|r| r.alias == *alias) {
+                                    if let Some(rule) = profile
+                                        .custom_windows
+                                        .iter_mut()
+                                        .find(|r| r.alias == *alias)
+                                    {
                                         rule.hotkey = Some(binding_clone);
                                         changed = true;
                                     }

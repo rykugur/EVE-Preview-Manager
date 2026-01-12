@@ -158,11 +158,11 @@ impl From<ProfileHelper> for Profile {
         let custom_aliases_set = custom_aliases; // move ownership
         for group in &mut cycle_groups {
             for slot in &mut group.cycle_list {
-                 if let crate::config::profile::CycleSlot::Eve(name) = slot {
-                     if custom_aliases_set.contains(name) {
-                         *slot = crate::config::profile::CycleSlot::Source(name.clone());
-                     }
-                 }
+                if let crate::config::profile::CycleSlot::Eve(name) = slot
+                    && custom_aliases_set.contains(name)
+                {
+                    *slot = crate::config::profile::CycleSlot::Source(name.clone());
+                }
             }
         }
 
@@ -308,15 +308,25 @@ impl<'de> Deserialize<'de> for Profile {
             let p = ProfileBinary::deserialize(deserializer)?;
 
             // Convert binary cycle groups to standard CycleGroup
-            let cycle_groups: Vec<CycleGroup> = p.cycle_groups.into_iter().map(|g| CycleGroup {
-                name: g.name,
-                cycle_list: g.cycle_list.into_iter().map(|s| match s {
-                    CycleSlotBinary::Eve(n) => crate::config::profile::CycleSlot::Eve(n),
-                    CycleSlotBinary::Source(n) => crate::config::profile::CycleSlot::Source(n),
-                }).collect(),
-                hotkey_forward: g.hotkey_forward,
-                hotkey_backward: g.hotkey_backward,
-            }).collect();
+            let cycle_groups: Vec<CycleGroup> = p
+                .cycle_groups
+                .into_iter()
+                .map(|g| CycleGroup {
+                    name: g.name,
+                    cycle_list: g
+                        .cycle_list
+                        .into_iter()
+                        .map(|s| match s {
+                            CycleSlotBinary::Eve(n) => crate::config::profile::CycleSlot::Eve(n),
+                            CycleSlotBinary::Source(n) => {
+                                crate::config::profile::CycleSlot::Source(n)
+                            }
+                        })
+                        .collect(),
+                    hotkey_forward: g.hotkey_forward,
+                    hotkey_backward: g.hotkey_backward,
+                })
+                .collect();
 
             Ok(Profile {
                 profile_name: p.profile_name,
