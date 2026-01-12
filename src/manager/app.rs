@@ -17,6 +17,7 @@ use crate::config::profile::Config;
 use crate::manager::components::profile_selector::{ProfileAction, ProfileSelector};
 #[cfg(target_os = "linux")]
 use crate::manager::components::tray::AppTray;
+use crate::manager::state::core::SaveMode;
 use crate::manager::state::{ManagerTab, SharedState, StatusMessage};
 use crate::manager::utils::load_window_icon;
 
@@ -258,7 +259,7 @@ impl eframe::App for ManagerApp {
                 let current_profile = &state.config.profiles[state.selected_profile_idx];
                 self.characters_state.load_from_profile(current_profile);
 
-                if let Err(err) = state.save_config() {
+                if let Err(err) = state.save_config(SaveMode::Implicit) {
                     error!(error = ?err, "Failed to save config after profile switch");
                     state.status_message = Some(StatusMessage {
                         text: format!("Save failed: {err}"),
@@ -273,7 +274,7 @@ impl eframe::App for ManagerApp {
             ProfileAction::ProfileCreated
             | ProfileAction::ProfileDeleted
             | ProfileAction::ProfileUpdated => {
-                if let Err(err) = state.save_config() {
+                if let Err(err) = state.save_config(SaveMode::Implicit) {
                     error!(error = ?err, "Failed to save config after profile action");
                     state.status_message = Some(StatusMessage {
                         text: format!("Save failed: {err}"),
@@ -371,7 +372,7 @@ impl eframe::App for ManagerApp {
             }
             // Save config (merging daemon positions if needed, though daemon is stopped)
             // Just saving is enough as update loop keeps state.config fresh
-            if let Err(err) = state.save_config() {
+            if let Err(err) = state.save_config(SaveMode::Implicit) {
                 error!(error = ?err, "Failed to save window geometry on exit");
             } else {
                 info!("Window geometry saved on exit");

@@ -8,6 +8,7 @@ use crate::common::constants::manager_ui::*;
 use crate::common::ipc::{BootstrapMessage, DaemonMessage};
 
 use crate::manager::utils::spawn_daemon;
+use super::core::SaveMode;
 
 use super::DaemonStatus;
 use super::SharedState;
@@ -132,86 +133,98 @@ impl SharedState {
 
         // 2. Poll Status Messages
         let mut profile_switch_request = None;
-        if let Some(ref rx) = self.daemon_status_rx {
+        
+        // Collect messages first to avoid holding an immutable borrow on self while calling mutable methods (save_config)
+        let messages: Vec<DaemonMessage> = if let Some(ref rx) = self.daemon_status_rx {
+            let mut msgs = Vec::new();
             while let Ok(msg) = rx.try_recv() {
-                match msg {
-                    DaemonMessage::Log { level, message } => {
-                        info!(level = %level, "Daemon: {}", message);
-                    }
-                    DaemonMessage::Error(e) => {
-                        error!("Daemon Error: {}", e);
-                    }
-                    DaemonMessage::Status(msg) => {
-                        info!("Daemon Status: {}", msg);
-                        self.status_message = Some(crate::manager::state::StatusMessage {
-                            text: msg,
-                            color: crate::common::constants::manager_ui::STATUS_RUNNING,
-                        });
-                    }
-                    DaemonMessage::PositionChanged {
-                        name,
-                        x,
-                        y,
-                        width,
-                        height,
-                        is_custom,
-                    } => {
-                        if let Some(profile) = self.config.get_active_profile_mut() {
-                            let map = if is_custom {
-                                &mut profile.custom_source_thumbnails
-                            } else {
-                                &mut profile.character_thumbnails
-                            };
+                msgs.push(msg);
+            }
+            msgs
+        } else {
+            Vec::new()
+        };
 
-                            map.entry(name.clone())
-                                .and_modify(|s| {
-                                    s.x = x;
-                                    s.y = y;
-                                    s.dimensions.width = width;
-                                    s.dimensions.height = height;
-                                })
-                                .or_insert_with(|| {
-                                    crate::common::types::CharacterSettings::new(
-                                        x, y, width, height,
-                                    )
-                                });
-                        }
-
-                        let auto_save = self
-                            .config
-                            .get_active_profile()
-                            .map(|p| p.thumbnail_auto_save_position)
-                            .unwrap_or(false);
-
-                        if auto_save {
-                            // Debounce save: only write to disk if it's been at least 1 second since last attempt
-                            if self.last_save_attempt.elapsed()
-                                > Duration::from_millis(AUTO_SAVE_DELAY_MS)
-                            {
-                                let _ = self.config.save();
-                                self.last_save_attempt = Instant::now();
-                                debug!("Debounced auto-save triggered");
-                            } else {
-                                self.settings_changed = true; // Mark as dirty for final save
-                            }
-                        }
-                    }
-                    DaemonMessage::CharacterDetected { name, is_custom } => {
-                        if is_custom {
-                            info!("Daemon detected custom source: {}", name);
+        for msg in messages {
+            match msg {
+                DaemonMessage::Log { level, message } => {
+                    info!(level = %level, "Daemon: {}", message);
+                }
+                DaemonMessage::Error(e) => {
+                    error!("Daemon Error: {}", e);
+                }
+                DaemonMessage::Status(msg) => {
+                    info!("Daemon Status: {}", msg);
+                    self.status_message = Some(crate::manager::state::StatusMessage {
+                        text: msg,
+                        color: crate::common::constants::manager_ui::STATUS_RUNNING,
+                    });
+                }
+                DaemonMessage::PositionChanged {
+                    name,
+                    x,
+                    y,
+                    width,
+                    height,
+                    is_custom,
+                } => {
+                    if let Some(profile) = self.config.get_active_profile_mut() {
+                        let map = if is_custom {
+                            &mut profile.custom_source_thumbnails
                         } else {
-                            info!("Daemon detected character: {}", name);
+                            &mut profile.character_thumbnails
+                        };
+
+                        map.entry(name.clone())
+                            .and_modify(|s| {
+                                s.x = x;
+                                s.y = y;
+                                s.dimensions.width = width;
+                                s.dimensions.height = height;
+                            })
+                            .or_insert_with(|| {
+                                crate::common::types::CharacterSettings::new(
+                                    x, y, width, height,
+                                )
+                            });
+                    }
+
+                    let auto_save = self
+                        .config
+                        .get_active_profile()
+                        .map(|p| p.thumbnail_auto_save_position)
+                        .unwrap_or(false);
+
+                    debug!("Position changed: auto_save={}", auto_save);
+
+                    if auto_save {
+                        // Debounce save: only write to disk if it's been at least 1 second since last attempt
+                        if self.last_save_attempt.elapsed()
+                            > Duration::from_millis(AUTO_SAVE_DELAY_MS)
+                        {
+                            let _ = self.save_config(SaveMode::Explicit);
+                            self.last_save_attempt = Instant::now();
+                            debug!("Debounced auto-save triggered");
+                        } else {
+                            self.settings_changed = true; // Mark as dirty for final save
                         }
                     }
-                    DaemonMessage::RequestProfileSwitch(name) => {
-                        info!("Daemon requested profile switch: {}", name);
-                        profile_switch_request = Some(name);
+                }
+                DaemonMessage::CharacterDetected { name, is_custom } => {
+                    if is_custom {
+                        info!("Daemon detected custom source: {}", name);
+                    } else {
+                        info!("Daemon detected character: {}", name);
                     }
-                    DaemonMessage::Heartbeat => {
-                        self.ipc_healthy = true;
-                        self.last_heartbeat = Instant::now();
-                        self.missed_heartbeats = 0;
-                    }
+                }
+                DaemonMessage::RequestProfileSwitch(name) => {
+                    info!("Daemon requested profile switch: {}", name);
+                    profile_switch_request = Some(name);
+                }
+                DaemonMessage::Heartbeat => {
+                    self.ipc_healthy = true;
+                    self.last_heartbeat = Instant::now();
+                    self.missed_heartbeats = 0;
                 }
             }
         }

@@ -7,6 +7,7 @@ use tracing::error;
 
 use crate::common::constants::manager_ui::*;
 use crate::manager::components::profile_selector::{ProfileAction, ProfileSelector};
+use crate::manager::state::core::SaveMode;
 use crate::manager::state::{ManagerTab, SharedState, StatusMessage};
 
 /// Renders the global header panel containing daemon status, tabs, and profile controls
@@ -110,7 +111,7 @@ pub fn render(
 
             // Save button
             if ui.button("💾 Save & Apply").clicked() {
-                if let Err(err) = state.save_config() {
+                if let Err(err) = state.save_config(SaveMode::Explicit) {
                     error!(error = ?err, "Failed to save config");
                     state.status_message = Some(StatusMessage {
                         text: format!("Save failed: {err}"),

@@ -218,7 +218,7 @@ impl SourcesTab {
                                             ui.indent("active_border_details", |ui| {
                                                 ui.horizontal(|ui| {
                                                     ui.label("Color:");
-                                                    let mut color = rule.active_border_color.clone().unwrap_or_else(|| profile.thumbnail_active_border_color.clone());
+                                                    let color = rule.active_border_color.clone().unwrap_or_else(|| profile.thumbnail_active_border_color.clone());
                                                     let mut egui_color = crate::common::color::hex_to_color32(&color).unwrap_or(egui::Color32::WHITE);
                                                     if ui.color_edit_button_srgba(&mut egui_color).changed() {
                                                          rule.active_border_color = Some(crate::common::color::color32_to_hex(egui_color));
@@ -255,7 +255,7 @@ impl SourcesTab {
                                             ui.indent("inactive_border_details", |ui| {
                                                 ui.horizontal(|ui| {
                                                     ui.label("Color:");
-                                                    let mut color = rule.inactive_border_color.clone().unwrap_or_else(|| profile.thumbnail_inactive_border_color.clone());
+                                                    let color = rule.inactive_border_color.clone().unwrap_or_else(|| profile.thumbnail_inactive_border_color.clone());
                                                     let mut egui_color = crate::common::color::hex_to_color32(&color).unwrap_or(egui::Color32::WHITE);
                                                     if ui.color_edit_button_srgba(&mut egui_color).changed() {
                                                          rule.inactive_border_color = Some(crate::common::color::color32_to_hex(egui_color));
