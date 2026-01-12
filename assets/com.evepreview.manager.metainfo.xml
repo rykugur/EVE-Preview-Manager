@@ -59,6 +59,7 @@
           <li>Custom Source Settings: Integrated sources into cycle groups, added per-source hotkeys, and per-source visual overrides.</li>
           <li>Cycle Groups: Added new option (off by default) that resets the cycle order to the beginning of the list when swapping between separate cycle groups.</li>
           <li>Logging: Added --debug flag for troubleshooting and reduced standard log verbosity to keep the output less cluttered.</li>
+          <li>Reset cycle group order: Add new option (off by default) that when enabled, resets the cycle order to the beginning of the list when swapping between separate cycle groups. ie DPS and Logi</li>
         </ul>
         <p>Fixed:</p>
         <ul>
