@@ -13,6 +13,7 @@ enum CaptureTarget {
     TogglePreviews,    // Hotkey to toggle thumbnail visibility
     Profile,           // Hotkey to switch to this profile
     Character(String), // Character name for per-character hotkey
+    CustomRule(String), // Custom Window Rule alias (Custom Source Hotkey)
 }
 
 /// State for hotkey settings Manager
@@ -107,9 +108,26 @@ impl HotkeySettingsState {
         self.start_key_capture(CaptureTarget::Character(character_name), backend);
     }
 
+    /// Public method for starting custom rule hotkey capture
+    pub fn start_key_capture_for_custom_rule(
+        &mut self,
+        rule_alias: String,
+        backend: crate::config::HotkeyBackendType,
+    ) {
+        self.start_key_capture(CaptureTarget::CustomRule(rule_alias), backend);
+    }
+
     pub fn is_capturing_for(&self, character_name: &str) -> bool {
         if let Some(CaptureTarget::Character(ref target)) = self.capture_target {
             target == character_name && self.show_key_capture_dialog
+        } else {
+            false
+        }
+    }
+
+    pub fn is_capturing_custom_rule(&self, alias: &str) -> bool {
+        if let Some(CaptureTarget::CustomRule(ref target)) = self.capture_target {
+            target == alias && self.show_key_capture_dialog
         } else {
             false
         }
@@ -442,6 +460,7 @@ pub fn render_key_capture_modal(
                 Some(CaptureTarget::TogglePreviews) => "Toggle Previews".to_string(),
                 Some(CaptureTarget::Profile) => "Switch to Profile".to_string(),
                 Some(CaptureTarget::Character(ref name)) => format!("Character: {}", name),
+                Some(CaptureTarget::CustomRule(ref alias)) => format!("Custom Source: {}", alias),
                 None => "Unknown".to_string(),
             };
 
@@ -589,6 +608,14 @@ pub fn render_key_capture_modal(
                                         profile
                                             .character_hotkeys
                                             .insert(char_name.clone(), binding_clone);
+                                        changed = true;
+                                    }
+                                }
+
+                                Some(CaptureTarget::CustomRule(ref alias)) => {
+                                    // Find rule and update hotkey
+                                    if let Some(rule) = profile.custom_windows.iter_mut().find(|r| r.alias == *alias) {
+                                        rule.hotkey = Some(binding_clone);
                                         changed = true;
                                     }
                                 }

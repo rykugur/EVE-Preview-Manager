@@ -123,7 +123,7 @@ fn setup_hotkeys(daemon_config: &DaemonConfig, allowed_windows: AllowedWindows) 
 
     // Build character hotkey list from ALL defined character hotkeys
     // This ensures detached characters still have their hotkeys registered
-    let character_hotkeys: Vec<_> = daemon_config
+    let mut character_hotkeys: Vec<_> = daemon_config
         .profile
         .character_hotkeys
         .values()
@@ -143,6 +143,18 @@ fn setup_hotkeys(daemon_config: &DaemonConfig, allowed_windows: AllowedWindows) 
             .entry(binding.clone())
             .or_default()
             .push(char_name.clone());
+    }
+
+    // Include Custom Source hotkeys in the groups
+    for rule in &daemon_config.profile.custom_windows {
+        if let Some(binding) = &rule.hotkey {
+            hotkey_groups
+                .entry(binding.clone())
+                .or_default()
+                .push(rule.alias.clone());
+            
+            character_hotkeys.push(binding.clone());
+        }
     }
 
     debug!(

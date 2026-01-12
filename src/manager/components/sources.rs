@@ -43,7 +43,12 @@ impl Default for SourcesTab {
 }
 
 impl SourcesTab {
-    pub fn ui(&mut self, ui: &mut Ui, profile: &mut crate::config::profile::Profile) -> bool {
+    pub fn ui(
+        &mut self,
+        ui: &mut Ui,
+        profile: &mut crate::config::profile::Profile,
+        hotkey_state: &mut crate::manager::components::hotkey_settings::HotkeySettingsState,
+    ) -> bool {
         let mut changed = false;
 
         ui.heading("Custom Sources");
@@ -151,6 +156,43 @@ impl SourcesTab {
                                         };
                                         changed = true;
                                     }
+                                    ui.end_row();
+
+                                    // Hotkey
+                                    ui.label("Hotkey:");
+                                    ui.horizontal(|ui| {
+                                        if let Some(binding) = &rule.hotkey {
+                                            ui.label(
+                                                egui::RichText::new(binding.display_name())
+                                                    .strong()
+                                                    .color(ui.style().visuals.text_color()),
+                                            );
+                                            
+                                            if ui.small_button("✖").on_hover_text("Clear Hotkey").clicked() {
+                                                rule.hotkey = None;
+                                                changed = true;
+                                            }
+                                        } else {
+                                            ui.label(
+                                                egui::RichText::new("Not set")
+                                                    .weak()
+                                                    .color(ui.style().visuals.weak_text_color()),
+                                            );
+                                        }
+
+                                        let bind_text = if hotkey_state.is_capturing_custom_rule(&rule.alias) {
+                                            "Capturing..."
+                                        } else {
+                                            "⌨ Bind"
+                                        };
+
+                                        if ui.button(bind_text).clicked() {
+                                            hotkey_state.start_key_capture_for_custom_rule(
+                                                rule.alias.clone(),
+                                                profile.hotkey_backend,
+                                            );
+                                        }
+                                    });
                                     ui.end_row();
 
                                     // --- Visual Overrides ---
@@ -629,6 +671,11 @@ impl SourcesTab {
                 });
             });
         });
+
+        // Render Hotkey Modal if active
+        if hotkey_state.is_dialog_open() {
+             changed |= crate::manager::components::hotkey_settings::render_key_capture_modal(ui, profile, hotkey_state);
+        }
 
         changed
     }
