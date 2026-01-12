@@ -51,6 +51,26 @@
   </screenshots>
 
   <releases>
+    <release version="1.6.0" date="2026-01-11">
+      <description>
+        <p>New:</p>
+        <ul>
+          <li>Automated Backups: EPM now automatically saves your config to ensure you never lose your settings. These backups are compressed (1-2Kb each) to keep storage impact minimal. The system manages scheduled backups on startup and automatically prunes the oldest files, while manual backups are preserved indefinitely.</li>
+          <li>Custom Sources: Custom sources can now be integrated into cycle groups alongside EVE characters for more flexible switching.</li>
+          <li>Logging: Added --debug flag for troubleshooting and reduced standard log verbosity to keep the output clean.</li>
+        </ul>
+        <p>Fixed:</p>
+        <ul>
+          <li>Custom Sources: Resolved issues with preview persistence, positioning, auto-detection logic, and borders not being applied.</li>
+          <li>Overrides: Fixed a bug where per-character override settings (like static backgrounds) would fail to persist after a character logged out and back in.</li>
+        </ul>
+        <p>Other:</p>
+        <ul>
+          <li>Architecture: Improved how the application communicates internally by centralizing configuration management. The Manager now acts as the single source of truth, communicating with the daemon via IPC.</li>
+          <li>Maintenance: Refactored core modules and cleaned up the codebase to improve long-term maintainability.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.5.0" date="2025-12-24">
       <description>
         <p>New Features:</p>
