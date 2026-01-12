@@ -82,6 +82,46 @@ impl DaemonConfig {
 
         let opacity = Opacity::from_percent(self.profile.thumbnail_opacity).to_argb32();
 
+        let mut character_settings = self.profile.character_thumbnails.clone();
+        
+        // 1. Merge saved custom source thumbnails (positions/modes)
+        character_settings.extend(self.profile.custom_source_thumbnails.clone());
+
+        // 2. Apply Custom Window Rules as default overrides
+        // If a custom source has a rule, we ensure its overrides are applied to the settings map.
+        // This handles cases where a custom source hasn't been "saved" (moved) yet but has config rule overrides.
+        for rule in &self.profile.custom_windows {
+            character_settings
+                .entry(rule.alias.clone())
+                .and_modify(|settings| {
+                    // Update existing settings with rule overrides if present (Rule takes precedence or fills gaps?)
+                    // Usually saved settings (user edits via context menu) should win, 
+                    // BUT for custom sources, the "Rule" IS the user edit for these overrides effectively.
+                    // The UI writes to the Rule. So the Rule is authoritative for overrides.
+                    if rule.active_border_color.is_some() { settings.override_active_border_color = rule.active_border_color.clone(); }
+                    if rule.inactive_border_color.is_some() { settings.override_inactive_border_color = rule.inactive_border_color.clone(); }
+                    if rule.active_border_size.is_some() { settings.override_active_border_size = rule.active_border_size; }
+                    if rule.inactive_border_size.is_some() { settings.override_inactive_border_size = rule.inactive_border_size; }
+                    if rule.text_color.is_some() { settings.override_text_color = rule.text_color.clone(); }
+                    if rule.preview_mode.is_some() { settings.preview_mode = rule.preview_mode.clone().unwrap_or_default(); }
+                })
+                .or_insert_with(|| {
+                    // Create minimal settings from rule
+                    crate::common::types::CharacterSettings {
+                         x: 0, y: 0, // Will be positioned by spawn logic if 0
+                         dimensions: crate::common::types::Dimensions::new(rule.default_width, rule.default_height),
+                         alias: None,
+                         notes: None,
+                         override_active_border_color: rule.active_border_color.clone(),
+                         override_inactive_border_color: rule.inactive_border_color.clone(),
+                         override_active_border_size: rule.active_border_size,
+                         override_inactive_border_size: rule.inactive_border_size,
+                         override_text_color: rule.text_color.clone(),
+                         preview_mode: rule.preview_mode.clone().unwrap_or_default(),
+                    }
+                });
+        }
+
         DisplayConfig {
             enabled: self.profile.thumbnail_enabled,
             opacity,
@@ -105,7 +145,7 @@ impl DaemonConfig {
                 0
             },
             minimized_overlay_enabled: self.profile.client_minimize_show_overlay,
-            character_settings: self.profile.character_thumbnails.clone(),
+            character_settings,
         }
     }
 

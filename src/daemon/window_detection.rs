@@ -273,14 +273,21 @@ pub fn check_and_create_window<'a>(
         } else {
             settings.dimensions
         };
-        (dims, settings.preview_mode.clone())
+        // Use rule preview_mode if set, otherwise fallback to saved setting
+        let mode = if let Some(rule) = &identity.rule 
+            && let Some(rule_mode) = &rule.preview_mode {
+            rule_mode.clone()
+        } else {
+            settings.preview_mode.clone()
+        };
+        (dims, mode)
     } else {
         // No saved settings
         if let Some(rule) = identity.rule {
             // Use Custom Rule defaults
             (
                 Dimensions::new(rule.default_width, rule.default_height),
-                crate::common::types::PreviewMode::default(),
+                rule.preview_mode.clone().unwrap_or_default(),
             )
         } else {
             // Auto-detect EVE default
