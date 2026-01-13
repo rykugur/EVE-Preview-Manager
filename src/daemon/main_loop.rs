@@ -469,22 +469,59 @@ async fn run_event_loop(
                     formats,
                 };
 
-                // Check if we should only allow hotkeys when EVE window is focused
-                // UPDATED: Now check if ANY tracked window (EVE or Custom Source) is focused
+                // NOTE: Logic gates hotkeys to only function when a tracked window has focus.
+                // This prevents hotkeys from firing while typing in other applications (e.g. Discord).
                 let should_process = if resources.config.profile.hotkey_require_eve_focus {
                     match crate::x11::get_active_window(ctx.conn, ctx.screen, ctx.atoms) {
                         Ok(Some(active_window)) => {
-                             // Check if this window is one of our tracked clients
-                             let is_tracked = resources.eve_clients.contains_key(&active_window);
-                             if !is_tracked {
-                                 debug!(active_window = active_window, "Hotkey ignored: Focused window is not a tracked client");
-                             }
-                             is_tracked
+                            if resources.eve_clients.contains_key(&active_window) {
+                                true
+                            } else {
+                                // NOTE: The active window might be a child (e.g. in Wine/Proton apps like Mod Organizer).
+                                // We must walk the window hierarchy to check if any ancestor is a tracked client.
+                                let mut current = active_window;
+                                let mut found_ancestor = false;
+
+                                // NOTE: Limit traversal depth to prevent infinite loops (X11 cycles) or stalls.
+                                for _ in 0..10 {
+                                    match ctx.conn.query_tree(current) {
+                                        Ok(cookie) => {
+                                            if let Ok(reply) = cookie.reply() {
+                                                if resources.eve_clients.contains_key(&reply.parent) {
+                                                    found_ancestor = true;
+                                                    debug!(
+                                                        child = active_window,
+                                                        parent = reply.parent,
+                                                        "Hotkey allowed: Found tracked ancestor"
+                                                    );
+                                                    break;
+                                                }
+                                                // Stop if we hit root or invalid window
+                                                if reply.parent == ctx.screen.root || reply.parent == 0 {
+                                                    break;
+                                                }
+                                                current = reply.parent;
+                                            } else {
+                                                break;
+                                            }
+                                        }
+                                        Err(_) => break,
+                                    }
+                                }
+
+                                if !found_ancestor {
+                                    debug!(
+                                        active_window = active_window,
+                                        "Hotkey ignored: Focused window is not a tracked client or descendant"
+                                    );
+                                }
+                                found_ancestor
+                            }
                         }
                         Ok(None) => false,
                         Err(e) => {
-                             error!(error = %e, "Failed to check focused window");
-                             false
+                            error!(error = %e, "Failed to check focused window");
+                            false
                         }
                     }
                 } else {
