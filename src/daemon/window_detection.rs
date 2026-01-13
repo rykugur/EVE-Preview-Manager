@@ -368,6 +368,7 @@ pub fn check_and_create_window<'a>(
     let character_name = identity.name;
 
     // Get saved position and dimensions
+    // Get saved position and dimensions
     // Determine which map to query based on identity type
     let settings_map = if identity.is_eve {
         &daemon_config.character_thumbnails
@@ -375,15 +376,36 @@ pub fn check_and_create_window<'a>(
         &daemon_config.custom_source_thumbnails
     };
 
-    let position = state.get_position(
-        &character_name,
-        window,
-        settings_map,
-        daemon_config.profile.thumbnail_preserve_position_on_swap,
-    );
+    let profile_map = if identity.is_eve {
+        &daemon_config.profile.character_thumbnails
+    } else {
+        &daemon_config.profile.custom_source_thumbnails
+    };
+
+    // Priority 1: Runtime Settings (active session changes)
+    // Priority 2: Profile Settings (saved on disk)
+    // Priority 3: Inheritance / Session State
+    let position = if let Some(settings) = settings_map.get(&character_name) {
+        Some(settings.position())
+    } else if let Some(settings) = profile_map.get(&character_name) {
+        Some(settings.position())
+    } else {
+        // Pass empty map to enforce inheritance/fallback logic only
+        state.get_position(
+            &character_name,
+            window,
+            &HashMap::new(),
+            daemon_config.profile.thumbnail_preserve_position_on_swap,
+        )
+    };
+
+    // Determine effective settings for dimensions and mode
+    let effective_settings = settings_map
+        .get(&character_name)
+        .or_else(|| profile_map.get(&character_name));
 
     // Get dimensions: From settings, OR from Rule (if custom), OR default
-    let (dimensions, preview_mode) = if let Some(settings) = settings_map.get(&character_name) {
+    let (dimensions, preview_mode) = if let Some(settings) = effective_settings {
         // Use saved settings, but let Custom Rule override dimensions if present
         let dims = if let Some(rule) = &identity.rule {
             Dimensions::new(rule.default_width, rule.default_height)
@@ -529,9 +551,27 @@ pub fn scan_eve_windows<'a>(
                                 .any(|r| r.alias == eve.character_name);
 
                             if is_custom_alias {
-                                daemon_config
+                                // NOTE: specific check to preserve existing overrides (like preview_mode)
+                                // if they were already loaded from the profile config key.
+                                if let Some(existing) = daemon_config
                                     .custom_source_thumbnails
-                                    .insert(eve.character_name.clone(), settings);
+                                    .get_mut(&eve.character_name)
+                                {
+                                    existing.x = settings.x;
+                                    existing.y = settings.y;
+                                    existing.dimensions = settings.dimensions;
+                                } else {
+                                    daemon_config
+                                        .custom_source_thumbnails
+                                        .insert(eve.character_name.clone(), settings);
+                                }
+                            } else if let Some(existing) = daemon_config
+                                .character_thumbnails
+                                .get_mut(&eve.character_name)
+                            {
+                                existing.x = settings.x;
+                                existing.y = settings.y;
+                                existing.dimensions = settings.dimensions;
                             } else {
                                 daemon_config
                                     .character_thumbnails
