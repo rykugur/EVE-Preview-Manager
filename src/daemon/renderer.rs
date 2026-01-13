@@ -563,7 +563,20 @@ impl<'a> ThumbnailRenderer<'a> {
     ) -> Result<()> {
         self.overlay
             .draw_minimized(display_config, character_name, dimensions, font_renderer)?;
-        self.update(character_name, dimensions).context(format!(
+
+        // Explicitly clear background to black using fill_static.
+        // We cannot use self.update() here because it calls capture(), which correctly skips
+        // unmapped windows to prevent KWin crashes. However, for the minimized state,
+        // we WANT to clear the old content (frozen image).
+        let black = x11rb::protocol::render::Color {
+            red: 0,
+            green: 0,
+            blue: 0,
+            alpha: 0xffff,
+        };
+        self.fill_static(character_name, dimensions, black)?;
+
+        self.overlay(character_name, dimensions).context(format!(
             "Failed to update minimized display for '{}'",
             character_name
         ))?;
@@ -675,13 +688,7 @@ impl<'a> ThumbnailRenderer<'a> {
             sequence: 0,
             window: self.src,
             type_: self.atoms.net_active_window,
-            data: ClientMessageData::from([
-                x11::ACTIVE_WINDOW_SOURCE_PAGER,
-                timestamp,
-                0,
-                0,
-                0,
-            ]),
+            data: ClientMessageData::from([x11::ACTIVE_WINDOW_SOURCE_PAGER, timestamp, 0, 0, 0]),
         };
 
         self.conn

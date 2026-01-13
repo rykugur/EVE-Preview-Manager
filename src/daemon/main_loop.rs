@@ -440,7 +440,8 @@ async fn run_event_loop(
                         }
 
                         // Update CycleState (hotkeys)
-                        resources.cycle = CycleState::new(resources.config.profile.cycle_groups.clone());
+                        // NOTE: Do NOT recreate CycleState here! It would wipe out active_windows tracking.
+                        // CycleState is only created once at startup and maintains window state across config reloads.
 
                         // Force redraw of all thumbnails with new settings
                         display_config = resources.config.build_display_config();

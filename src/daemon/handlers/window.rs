@@ -91,9 +91,22 @@ pub fn process_detected_window(
                             );
 
                             if identity.is_eve {
-                                ctx.daemon_config
+                                // Check if we already have settings for this character.
+                                // If so, update the geometry but PRESERVE the user's overrides (like preview_mode).
+                                // This fixes the issue where unminimizing a client (MapNotify) would reset it to Live mode.
+                                if let Some(existing) = ctx
+                                    .daemon_config
                                     .character_thumbnails
-                                    .insert(thumbnail.character_name.clone(), settings.clone());
+                                    .get_mut(&thumbnail.character_name)
+                                {
+                                    existing.x = settings.x;
+                                    existing.y = settings.y;
+                                    existing.dimensions = settings.dimensions;
+                                } else {
+                                    ctx.daemon_config
+                                        .character_thumbnails
+                                        .insert(thumbnail.character_name.clone(), settings.clone());
+                                }
                             } else {
                                 ctx.daemon_config
                                     .custom_source_thumbnails
