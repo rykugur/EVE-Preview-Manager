@@ -51,6 +51,15 @@
   </screenshots>
 
   <releases>
+    <release version="1.6.1" date="2026-01-13">
+      <description>
+        <p>Fixed:</p>
+        <ul>
+          <li>Fixed previewing custom sources launched via Steam/Proton that could cause crashes.</li>
+          <li>Fixed window re-detection for minimized clients to correctly preserve character settings, cycle group state, and preview rendering.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.6.0" date="2026-01-12">
       <description>
         <p>New:</p>
@@ -59,7 +68,6 @@
           <li>Custom Source Settings: Integrated sources into cycle groups, added per-source hotkeys, and per-source visual overrides.</li>
           <li>Cycle Groups: Added new option (off by default) that resets the cycle order to the beginning of the list when swapping between separate cycle groups.</li>
           <li>Logging: Added --debug flag for troubleshooting and reduced standard log verbosity to keep the output less cluttered.</li>
-          <li>Reset cycle group order: Add new option (off by default) that when enabled, resets the cycle order to the beginning of the list when swapping between separate cycle groups. ie DPS and Logi</li>
         </ul>
         <p>Fixed:</p>
         <ul>
