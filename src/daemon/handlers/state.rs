@@ -18,6 +18,12 @@ pub fn handle_focus_in(ctx: &mut EventContext, event: FocusInEvent) -> Result<()
         debug!(window = event.event, "Synced cycle state to focused window");
     }
 
+    // Cancel any pending hide operation since we regained focus
+    if ctx.session_state.focus_loss_deadline.is_some() {
+        ctx.session_state.focus_loss_deadline = None;
+        debug!("Cancelled pending focus loss hide");
+    }
+
     if ctx.display_config.hide_when_no_focus && ctx.eve_clients.values().any(|x| !x.is_visible()) {
         for thumbnail in ctx.eve_clients.values_mut() {
             debug!(character = %thumbnail.character_name, "Revealing thumbnail due to focus change");
@@ -86,13 +92,14 @@ pub fn handle_focus_out(ctx: &mut EventContext, event: FocusOutEvent) -> Result<
             .unwrap_or(false);
 
         if was_active {
-            for thumbnail in ctx.eve_clients.values_mut() {
-                debug!(character = %thumbnail.character_name, "Hiding thumbnail due to focus loss");
-                thumbnail.visibility(false).context(format!(
-                    "Failed to hide thumbnail '{}' on focus loss",
-                    thumbnail.character_name
-                ))?;
-            }
+            // Schedule the hide operation with a short delay (hysteresis) to allow for
+            // quick focus cycling without flickering.
+            ctx.session_state.focus_loss_deadline =
+                Some(std::time::Instant::now() + std::time::Duration::from_millis(100));
+            debug!(
+                window = event.event,
+                "Scheduled delayed thumbnail hide due to focus loss"
+            );
         }
     }
     Ok(())

@@ -335,6 +335,10 @@ async fn run_event_loop(
     // Set the first tick to finish immediately? No, we can wait 3s for the first one.
     heartbeat_interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
+    // Timer for delayed thumbnail hiding (hysteresis)
+    let hide_timer = tokio::time::sleep(tokio::time::Duration::from_secs(86400));
+    tokio::pin!(hide_timer);
+
     loop {
         // Scope ctx to allow mutable borrow of font_renderer later
         {
@@ -379,6 +383,7 @@ async fn run_event_loop(
         // Sync allowed windows with backend
         {
             let current_windows: HashSet<u32> = resources.eve_clients.keys().cloned().collect();
+            
             let need_update = {
                 if let Ok(guard) = allowed_windows.read() {
                     *guard != current_windows
@@ -394,6 +399,24 @@ async fn run_event_loop(
                     debug!("Allowed windows set updated");
                 }
             }
+        }
+
+        // Update hide timer if deadline was set or changed
+        if let Some(deadline) = resources.session.focus_loss_deadline {
+            // Calculate duration until deadline
+            // If deadline is in past, use 0 duration to fire immediately
+            let duration = deadline
+                .checked_duration_since(std::time::Instant::now())
+                .unwrap_or(std::time::Duration::ZERO);
+
+            hide_timer
+                .as_mut()
+                .reset(tokio::time::Instant::now() + duration);
+
+            debug!(
+                delay_ms = duration.as_millis(),
+                "Updated hide timer deadline"
+            );
         }
 
         tokio::select! {
@@ -499,13 +522,8 @@ async fn run_event_loop(
                             character = %display_name,
                             "Activating window via hotkey"
                         );
+                                                                                                                                                                                                                                                                                                                                                                                                                                                
 
-                        // NOTE: Previously used a 15ms delay here to work around XWayland grab conflicts
-                        // where _NET_ACTIVE_WINDOW would arrive while the keyboard grab was still active,
-                        // causing window managers to refuse focus changes. After streamlining IPC updates
-                        // (delta-based ThumbnailMove, idempotency checks), the delay appears to not be needed.
-                        // Keeping commented for reference in case race conditions reappear.
-                        // tokio::time::sleep(std::time::Duration::from_millis(15)).await;
 
                         if let Err(e) = activate_window(ctx.conn, ctx.screen, ctx.atoms, window, timestamp) {
                             error!(window = window, error = %e, "Failed to activate window");
@@ -578,7 +596,20 @@ async fn run_event_loop(
                 continue;
             }
 
-            // 3. Send Heartbeat (Lower priority - can wait)
+            // 3. Handle Delayed Hide (Hysteresis)
+            // Only process this branch if there's an active deadline
+            () = &mut hide_timer, if resources.session.focus_loss_deadline.is_some() => {
+                debug!("Executing delayed thumbnail hide");
+                for thumbnail in resources.eve_clients.values_mut() {
+                    if let Err(e) = thumbnail.visibility(false) {
+                        error!(error = %e, character = %thumbnail.character_name, "Failed to hide thumbnail on focus timeout");
+                    }
+                }
+                // Clear deadline - this will disable the branch until next FocusOut
+                resources.session.focus_loss_deadline = None;
+            }
+
+            // 4. Send Heartbeat (Lower priority - can wait)
             _ = heartbeat_interval.tick() => {
                 if let Err(e) = status_tx.send(DaemonMessage::Heartbeat) {
                     error!(error = %e, "Failed to send heartbeat to Manager");

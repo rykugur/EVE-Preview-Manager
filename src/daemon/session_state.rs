@@ -22,6 +22,10 @@ pub struct SessionState {
     /// Tracks which character was last logged in on each window
     /// Used for including logged-out windows in cycle (if enabled in profile)
     pub window_last_character: HashMap<Window, String>,
+
+    /// Deadline for hiding thumbnails after focus loss (hysteresis)
+    /// Prevents flickering when cycling through clients
+    pub focus_loss_deadline: Option<std::time::Instant>,
 }
 
 impl SessionState {
@@ -127,6 +131,7 @@ mod tests {
         let state = SessionState {
             window_positions: HashMap::from([(456, Position::new(300, 400))]),
             window_last_character: HashMap::new(),
+            focus_loss_deadline: None,
         };
         let char_positions = HashMap::new();
 
@@ -140,6 +145,7 @@ mod tests {
         let state = SessionState {
             window_positions: HashMap::from([(789, Position::new(500, 600))]),
             window_last_character: HashMap::new(),
+            focus_loss_deadline: None,
         };
         let char_positions = HashMap::new();
 
@@ -153,6 +159,7 @@ mod tests {
         let state = SessionState {
             window_positions: HashMap::new(),
             window_last_character: HashMap::new(),
+            focus_loss_deadline: None,
         };
         let char_positions = HashMap::new();
 
@@ -166,6 +173,7 @@ mod tests {
         let state = SessionState {
             window_positions: HashMap::from([(111, Position::new(700, 800))]),
             window_last_character: HashMap::new(),
+            focus_loss_deadline: None,
         };
         let char_positions = HashMap::new();
 
