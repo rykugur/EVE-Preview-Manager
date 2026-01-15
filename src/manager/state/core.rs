@@ -140,7 +140,7 @@ impl SharedState {
                 runtime_hidden: false,
             };
 
-            if let Err(e) = tx.send(ConfigMessage::Update(daemon_config)) {
+            if let Err(e) = tx.send(ConfigMessage::Full(Box::new(daemon_config))) {
                 error!(error = %e, "Failed to send config update to daemon");
                 return Err(anyhow::anyhow!("Failed to send config to daemon: {}", e));
             } else {
@@ -199,6 +199,44 @@ impl SharedState {
             color: COLOR_SUCCESS,
         });
         info!("Configuration saved to disk");
+        Ok(())
+    }
+
+    /// Save config to disk WITHOUT syncing to daemon via IPC
+    /// Used when the Daemon already knows about the change (e.g., it initiated the PositionChanged event)
+    pub fn save_config_no_sync(&mut self, mode: SaveMode) -> Result<()> {
+        let mut config_to_save = self.config.clone();
+
+        if mode == SaveMode::Implicit {
+            if let Ok(disk_config) = crate::config::profile::Config::load() {
+                for profile in config_to_save.profiles.iter_mut() {
+                    if !profile.thumbnail_auto_save_position
+                        && let Some(disk_profile) = disk_config
+                            .profiles
+                            .iter()
+                            .find(|p| p.profile_name == profile.profile_name)
+                    {
+                        profile.character_thumbnails = disk_profile.character_thumbnails.clone();
+                        profile.custom_source_thumbnails =
+                            disk_profile.custom_source_thumbnails.clone();
+                    }
+                }
+            } else {
+                warn!("Failed to load disk config for position revert - saving current state");
+            }
+        }
+
+        config_to_save.save()?;
+
+        self.selected_profile_idx = self
+            .config
+            .profiles
+            .iter()
+            .position(|p| p.profile_name == self.config.global.selected_profile)
+            .unwrap_or(0);
+
+        self.settings_changed = false;
+        info!("Configuration saved to disk (no daemon sync)");
         Ok(())
     }
 

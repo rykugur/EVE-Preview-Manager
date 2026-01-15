@@ -6,8 +6,26 @@ use crate::config::DaemonConfig;
 /// Messages sent from Manager to Daemon
 #[derive(Debug, Serialize, Deserialize)]
 pub enum ConfigMessage {
-    /// Update the entire daemon configuration
-    Update(DaemonConfig),
+    /// Full state synchronization.
+    ///
+    /// Used for low-frequency, heavy operations like initial startup, profile switching,
+    /// or bulk GUI setting changes. The payload is Boxed to reduce the enum size,
+    /// optimizing the memory footprint for the high-frequency `ThumbnailMove` variant.
+    Full(Box<DaemonConfig>),
+
+    /// Lightweight spatial delta for a single thumbnail.
+    ///
+    /// Used during high-frequency drag events to avoid the overhead of full state serialization.
+    /// The Daemon applies this incrementally and enforces idempotency to prevent redundant
+    /// X11 re-configurations during rapid movement.
+    ThumbnailMove {
+        name: String,
+        is_custom: bool,
+        x: i16,
+        y: i16,
+        width: u16,
+        height: u16,
+    },
 }
 
 /// Messages sent from Daemon to Manager
@@ -23,7 +41,11 @@ pub enum DaemonMessage {
         name: String,
         is_custom: bool,
     },
-    /// Character thumbnail position changed (dragged)
+    /// Notification that a thumbnail's spatial state was detected or changed by the Daemon.
+    ///
+    /// Upon receipt, the Manager updates its local state, saves to disk, and acknowledges
+    /// with a `ThumbnailMove` delta. This confirms the new position without triggering
+    /// a full config sync cycle.
     PositionChanged {
         name: String,
         x: i16,

@@ -5,7 +5,7 @@ use std::time::{Duration, Instant};
 use tracing::{debug, error, info, warn};
 
 use crate::common::constants::manager_ui::*;
-use crate::common::ipc::{BootstrapMessage, DaemonMessage};
+use crate::common::ipc::{BootstrapMessage, ConfigMessage, DaemonMessage};
 
 use super::core::SaveMode;
 use crate::manager::utils::spawn_daemon;
@@ -200,9 +200,24 @@ impl SharedState {
                         if self.last_save_attempt.elapsed()
                             > Duration::from_millis(AUTO_SAVE_DELAY_MS)
                         {
-                            let _ = self.save_config(SaveMode::Explicit);
+                            // Save to disk only (Daemon already has the correct position)
+                            let _ = self.save_config_no_sync(SaveMode::Explicit);
+
+                            // Send lightweight delta to confirm the position
+                            // Daemon will perform idempotency check and skip redundant X11 operations
+                            if let Some(ref tx) = self.ipc_config_tx {
+                                let _ = tx.send(ConfigMessage::ThumbnailMove {
+                                    name: name.clone(),
+                                    is_custom,
+                                    x,
+                                    y,
+                                    width,
+                                    height,
+                                });
+                            }
+
                             self.last_save_attempt = Instant::now();
-                            debug!("Debounced auto-save triggered");
+                            debug!("Debounced auto-save triggered with ThumbnailMove delta");
                         } else {
                             self.settings_changed = true; // Mark as dirty for final save
                         }

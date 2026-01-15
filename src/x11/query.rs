@@ -2,6 +2,7 @@
 
 use anyhow::{Context, Result};
 use tracing::debug;
+use x11rb::connection::Connection;
 use x11rb::errors::ReplyError;
 use x11rb::protocol::xproto::*;
 use x11rb::rust_connection::RustConnection;
@@ -287,4 +288,27 @@ pub fn is_normal_window(
         }
         Err(e) => Err(anyhow::anyhow!("Failed to get window type reply: {}", e)),
     }
+}
+
+/// Get the list of client windows from _NET_CLIENT_LIST property on root window
+pub fn get_client_list(conn: &RustConnection, atoms: &CachedAtoms) -> Result<Vec<Window>> {
+    let prop = conn
+        .get_property(
+            false,
+            conn.setup().roots[0].root,
+            atoms.net_client_list,
+            AtomEnum::WINDOW,
+            0,
+            u32::MAX,
+        )
+        .context("Failed to query _NET_CLIENT_LIST property")?
+        .reply()
+        .context("Failed to get window list from X11 server")?;
+
+    let windows: Vec<Window> = prop
+        .value32()
+        .ok_or_else(|| anyhow::anyhow!("Invalid return from _NET_CLIENT_LIST"))?
+        .collect();
+
+    Ok(windows)
 }

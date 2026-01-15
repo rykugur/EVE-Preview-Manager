@@ -144,7 +144,7 @@ impl<'a> ThumbnailRenderer<'a> {
                 window,
                 ctx.atoms.wm_class,
                 AtomEnum::STRING,
-                b"eve-preview-manager\0eve-preview-manager\0",
+                b"eve-preview-thumbnail\0eve-preview-thumbnail\0",
             )
             .context(format!("Failed to set WM_CLASS for '{}'", character_name))?;
 

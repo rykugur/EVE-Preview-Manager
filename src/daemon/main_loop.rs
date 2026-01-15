@@ -397,66 +397,10 @@ async fn run_event_loop(
         }
 
         tokio::select! {
-             // 1. Send Heartbeat
-            _ = heartbeat_interval.tick() => {
-                if let Err(e) = status_tx.send(DaemonMessage::Heartbeat) {
-                    error!(error = %e, "Failed to send heartbeat to Manager");
-                    // If we can't send heartbeat, manager might be dead.
-                    // We'll let the IPC config channel failure handle termination.
-                }
-            }
+            biased;  // Process branches in order - prioritize hotkeys over heartbeat/IPC
 
-             // 2. Handle SIGUSR1 (Log status instead of save)
-            _ = sigusr1.recv() => {
-                info!("SIGUSR1 received - config is now managed by Manager via IPC");
-                let _ = status_tx.send(DaemonMessage::Status("SIGUSR1 received: Syncing config...".to_string()));
-            }
-
-            // 2. Handle IPC Config Updates
-            Some(msg) = ipc_config_rx_tokio.recv() => {
-                match msg {
-                    ConfigMessage::Update(new_config) => {
-                        info!("Received config update via IPC");
-
-                        // Update DaemonConfig
-                        resources.config = new_config;
-
-                        // Rebuild font renderer if font settings changed (optimization: check if changed first)
-                        // For now we just rebuild it.
-                         let new_renderer = crate::daemon::font::FontRenderer::resolve_from_config(
-                            conn,
-                            &resources.config.profile.thumbnail_text_font,
-                            resources.config.profile.thumbnail_text_size as f32,
-                        );
-
-                        match new_renderer {
-                            Ok(renderer) => {
-                                font_renderer = renderer;
-                                info!("Font renderer updated");
-                            }
-                            Err(e) => {
-                                error!(error = %e, "Failed to update font renderer");
-                            }
-                        }
-
-                        // Update CycleState (hotkeys)
-                        // NOTE: Do NOT recreate CycleState here! It would wipe out active_windows tracking.
-                        // CycleState is only created once at startup and maintains window state across config reloads.
-
-                        // Force redraw of all thumbnails with new settings
-                        display_config = resources.config.build_display_config();
-                        for thumbnail in resources.eve_clients.values_mut() {
-                             let _ = thumbnail.update(&display_config, &font_renderer);
-                        }
-
-                        info!("Config updated live");
-                    }
-                }
-            }
-
-
-
-            // 2. Handle Hotkey Commands
+            // 1. Handle Hotkey Commands (HIGHEST PRIORITY)
+            // Checked first to minimize latency and prevent XWayland grab conflicts
             Some(msg) = hotkey_rx.recv() => {
                  let TimestampedCommand { command, timestamp } = msg;
 
@@ -556,6 +500,13 @@ async fn run_event_loop(
                             "Activating window via hotkey"
                         );
 
+                        // NOTE: Previously used a 15ms delay here to work around XWayland grab conflicts
+                        // where _NET_ACTIVE_WINDOW would arrive while the keyboard grab was still active,
+                        // causing window managers to refuse focus changes. After streamlining IPC updates
+                        // (delta-based ThumbnailMove, idempotency checks), the delay appears to not be needed.
+                        // Keeping commented for reference in case race conditions reappear.
+                        // tokio::time::sleep(std::time::Duration::from_millis(15)).await;
+
                         if let Err(e) = activate_window(ctx.conn, ctx.screen, ctx.atoms, window, timestamp) {
                             error!(window = window, error = %e, "Failed to activate window");
                         } else {
@@ -573,6 +524,29 @@ async fn run_event_loop(
                                         debug!(window = other_window, error = %e, "Failed to minimize window via hotkey");
                                     }
                                 }
+
+                                // Minimize Manager GUI as well (to prevent focus stealing/clutter)
+                                // We search for "eve-preview-manager" class.
+                                // NOTE: Thumbnails are now "eve-preview-thumbnail", so this is safe/unique.
+                                let manager_window = crate::x11::get_client_list(ctx.conn, ctx.atoms)
+                                    .ok()
+                                    .and_then(|windows| {
+                                        windows.into_iter().find(|&w| {
+                                            crate::x11::get_window_class(ctx.conn, w, ctx.atoms)
+                                                .ok()
+                                                .flatten()
+                                                .map(|class| class == "eve-preview-manager")
+                                                .unwrap_or(false)
+                                        })
+                                    });
+
+                                if let Some(mgr_win) = manager_window {
+                                    if let Err(e) = minimize_window(ctx.conn, ctx.screen, ctx.atoms, mgr_win) {
+                                        debug!(window = mgr_win, error = %e, "Failed to minimize Manager GUI");
+                                    } else {
+                                        debug!("Minimized Manager GUI");
+                                    }
+                                }
                             }
                         }
                     } else {
@@ -586,7 +560,7 @@ async fn run_event_loop(
 
             }
 
-            // 3. Handle X11 Events Check
+            // 2. Handle X11 Events (SECOND PRIORITY)
             // Wait for X11 connection to be readable (meaning an event is available)
             // This is level-triggered
             ready = x11_fd.readable() => {
@@ -602,6 +576,134 @@ async fn run_event_loop(
                 }
                 // Continue to top of loop to process events
                 continue;
+            }
+
+            // 3. Send Heartbeat (Lower priority - can wait)
+            _ = heartbeat_interval.tick() => {
+                if let Err(e) = status_tx.send(DaemonMessage::Heartbeat) {
+                    error!(error = %e, "Failed to send heartbeat to Manager");
+                    // If we can't send heartbeat, manager might be dead.
+                    // We'll let the IPC config channel failure handle termination.
+                }
+            }
+
+            // 4. Handle SIGUSR1 (Lower priority)
+            _ = sigusr1.recv() => {
+                info!("SIGUSR1 received - config is now managed by Manager via IPC");
+                let _ = status_tx.send(DaemonMessage::Status("SIGUSR1 received: Syncing config...".to_string()));
+            }
+
+            // 5. Handle IPC Config Updates (Lower priority - expensive operation)
+            Some(msg) = ipc_config_rx_tokio.recv() => {
+                match msg {
+                    ConfigMessage::Full(new_config) => {
+                        let new_config = *new_config; // Unbox
+                        info!("Received full config update via IPC");
+
+                        // Update DaemonConfig
+                        resources.config = new_config;
+
+                        // Only rebuild font renderer if font settings actually changed
+                        let font_name = &resources.config.profile.thumbnail_text_font;
+                        let font_size = resources.config.profile.thumbnail_text_size as f32;
+
+                        if !font_renderer.matches_config(font_name, font_size) {
+                            debug!("Font settings changed, rebuilding renderer");
+                            let new_renderer = crate::daemon::font::FontRenderer::resolve_from_config(
+                                conn,
+                                font_name,
+                                font_size,
+                            );
+
+                            match new_renderer {
+                                Ok(renderer) => {
+                                    font_renderer = renderer;
+                                    info!("Font renderer updated");
+                                }
+                                Err(e) => {
+                                    error!(error = %e, "Failed to update font renderer");
+                                }
+                            }
+                        } else {
+                            debug!("Font settings unchanged, skipping rebuild");
+                        }
+
+                        // Update CycleState (hotkeys)
+                        // NOTE: Do NOT recreate CycleState here! It would wipe out active_windows tracking.
+                        // CycleState is only created once at startup and maintains window state across config reloads.
+
+                        // Force redraw of all thumbnails with new settings
+                        display_config = resources.config.build_display_config();
+                        for thumbnail in resources.eve_clients.values_mut() {
+                             let _ = thumbnail.update(&display_config, &font_renderer);
+                        }
+
+                        info!("Full config updated");
+                    },
+
+                    ConfigMessage::ThumbnailMove { name, is_custom, x, y, width, height } => {
+                        debug!(
+                            name = %name,
+                            is_custom = is_custom,
+                            x = x,
+                            y = y,
+                            width = width,
+                            height = height,
+                            "Received ThumbnailMove delta"
+                        );
+
+                        // Find the specific thumbnail by character name AND type (EVE vs custom source)
+                        let thumbnail_opt = resources.eve_clients.values_mut().find(|t| {
+                            if t.character_name != name {
+                                return false;
+                            }
+
+                            // Verify this thumbnail matches the expected type
+                            // Custom sources and EVE characters can have name collisions
+                            if is_custom {
+                                resources.config.custom_source_thumbnails.contains_key(&name)
+                            } else {
+                                resources.config.character_thumbnails.contains_key(&name)
+                            }
+                        });
+
+                        if let Some(thumb) = thumbnail_opt {
+                            // IDEMPOTENCY CHECK (Critical for performance)
+                            // If the position/size matches what we already have, skip processing
+                            // This prevents redundant X11 operations when the Daemon initiated the change
+                            if thumb.current_position.x == x
+                                && thumb.current_position.y == y
+                                && thumb.dimensions.width == width
+                                && thumb.dimensions.height == height
+                            {
+                                debug!(
+                                    name = %name,
+                                    "ThumbnailMove ignored: position/size unchanged (idempotent)"
+                                );
+                                continue;  // Skip to next iteration of select! loop
+                            }
+
+                            // Position differs - Manager corrected it (e.g., snapping, clamping)
+                            // Apply the Manager's authoritative coordinates
+                            if let Err(e) = thumb.reposition(x, y) {
+                                error!(name = %name, error = %e, "Failed to reposition thumbnail");
+                            }
+                            if let Err(e) = thumb.resize(width, height) {
+                                error!(name = %name, error = %e, "Failed to resize thumbnail");
+                            }
+                            info!(
+                                name = %name,
+                                x = x,
+                                y = y,
+                                width = width,
+                                height = height,
+                                "Position updated by Manager (ThumbnailMove delta)"
+                            );
+                        } else {
+                            debug!(name = %name, is_custom = is_custom, "ThumbnailMove ignored: character not tracked");
+                        }
+                    }
+                }
             }
         }
     }
@@ -632,7 +734,12 @@ pub async fn run_daemon(ipc_server_name: String) -> Result<()> {
 
     debug!("Waiting for initial configuration...");
     let initial_config = match config_rx.recv() {
-        Ok(ConfigMessage::Update(config)) => config,
+        Ok(ConfigMessage::Full(config)) => *config,
+        Ok(ConfigMessage::ThumbnailMove { .. }) => {
+            return Err(anyhow::anyhow!(
+                "Expected Full config on startup, got ThumbnailMove"
+            ));
+        }
         Err(e) => return Err(anyhow::anyhow!("Failed to receive initial config: {}", e)),
     };
     debug!("Received initial configuration");
