@@ -121,10 +121,14 @@ pub fn process_detected_window(
                                 height: settings.dimensions.height,
                                 is_custom: !identity.is_eve,
                             });
-                            let _ = ctx.status_tx.send(DaemonMessage::CharacterDetected {
-                                name: thumbnail.character_name.clone(),
-                                is_custom: !identity.is_eve,
-                            });
+
+                            // Only send CharacterDetected if this is a new window (avoid spam from Create+Map)
+                            if !ctx.eve_clients.contains_key(&window) {
+                                let _ = ctx.status_tx.send(DaemonMessage::CharacterDetected {
+                                    name: thumbnail.character_name.clone(),
+                                    is_custom: !identity.is_eve,
+                                });
+                            }
 
                             // Force initial update for custom sources as they might not emit Damage events immediately
                             if !identity.is_eve {
@@ -357,9 +361,6 @@ pub fn handle_identity_update(ctx: &mut EventContext, window: Window) -> Result<
             if old_name == new_character_name {
                 return Ok(());
             }
-
-            ctx.session_state
-                .update_last_character(window, new_character_name);
 
             let geom = ctx
                 .app_ctx

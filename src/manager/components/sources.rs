@@ -54,7 +54,7 @@ impl SourcesTab {
         ui.heading("Custom Sources");
         ui.label("Add external applications to preview. Applications must run in X11 or XWayland mode to be detected.");
         ui.label(
-            egui::RichText::new("⚠ Feature is a work in progress")
+            egui::RichText::new("⚠ Feature is experimental")
                 .weak()
                 .small(),
         );

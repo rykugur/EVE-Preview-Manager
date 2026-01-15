@@ -68,8 +68,15 @@ impl SessionState {
     /// Update session position (window tracking)
     pub fn update_window_position(&mut self, window: Window, x: i16, y: i16) {
         self.window_positions.insert(window, Position::new(x, y));
+        let character_name = self
+            .window_last_character
+            .get(&window)
+            .map(|s| s.as_str())
+            .unwrap_or("Unknown");
+
         info!(
             window = window,
+            character = %character_name,
             x = x,
             y = y,
             "Saved session position for window"

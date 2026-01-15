@@ -168,23 +168,14 @@ impl SharedState {
                     height,
                     is_custom,
                 } => {
+                    let mut changed = false;
                     if let Some(profile) = self.config.get_active_profile_mut() {
-                        let map = if is_custom {
-                            &mut profile.custom_source_thumbnails
-                        } else {
-                            &mut profile.character_thumbnails
-                        };
+                        changed = profile
+                            .update_thumbnail_position(&name, x, y, width, height, is_custom);
+                    }
 
-                        map.entry(name.clone())
-                            .and_modify(|s| {
-                                s.x = x;
-                                s.y = y;
-                                s.dimensions.width = width;
-                                s.dimensions.height = height;
-                            })
-                            .or_insert_with(|| {
-                                crate::common::types::CharacterSettings::new(x, y, width, height)
-                            });
+                    if !changed {
+                        continue;
                     }
 
                     let auto_save = self

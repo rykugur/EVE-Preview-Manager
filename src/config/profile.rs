@@ -418,6 +418,50 @@ impl Profile {
         profile.profile_description = description;
         profile
     }
+
+    /// Update thumbnail position/dimensions if changed.
+    /// Returns true if the configuration was modified, false otherwise.
+    pub fn update_thumbnail_position(
+        &mut self,
+        name: &str,
+        x: i16,
+        y: i16,
+        width: u16,
+        height: u16,
+        is_custom: bool,
+    ) -> bool {
+        let map = if is_custom {
+            &mut self.custom_source_thumbnails
+        } else {
+            &mut self.character_thumbnails
+        };
+
+        if let Some(existing) = map.get_mut(name) {
+            // Check if anything actually changed
+            if existing.x == x
+                && existing.y == y
+                && existing.dimensions.width == width
+                && existing.dimensions.height == height
+            {
+                // No change
+                return false;
+            }
+
+            // Update existing entry
+            existing.x = x;
+            existing.y = y;
+            existing.dimensions.width = width;
+            existing.dimensions.height = height;
+            true
+        } else {
+            // New entry - always a change
+            map.insert(
+                name.to_string(),
+                CharacterSettings::new(x, y, width, height),
+            );
+            true
+        }
+    }
 }
 
 impl Default for Profile {

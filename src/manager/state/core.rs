@@ -290,7 +290,7 @@ impl SharedState {
         self.save_config(SaveMode::Explicit)
             .context("Failed to save configuration")?;
 
-        self.status_message = Some(StatusMessage {
+        self.config_status_message = Some(StatusMessage {
             text: "Thumbnail positions saved".to_string(),
             color: STATUS_RUNNING,
         });
