@@ -51,6 +51,14 @@
   </screenshots>
 
   <releases>
+    <release version="1.6.2" date="2026-01-15">
+      <description>
+        <p>Other:</p>
+        <ul>
+          <li>Addresses performance and window focus edge cases introduced after migrating to the IPC backend. Implements delta-based updates and conditional rebuilds to reduce overhead in the communication channel.</li>
+        </ul>
+      </description>
+    </release>
     <release version="1.6.1" date="2026-01-13">
       <description>
         <p>Fixed:</p>
